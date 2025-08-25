@@ -1,0 +1,29 @@
+{
+  "name": "wanderlust-api-deployment",
+  "version": "1.0.0",
+  "description": "Deployment utilities for Wanderlust API",
+  "scripts": {
+    "deploy": "node scripts/deploy.js",
+    "deploy:dev": "cross-env BUILD_CONFIGURATION=Debug node scripts/deploy.js",
+    "deploy:prod": "cross-env BUILD_CONFIGURATION=Release node scripts/deploy.js",
+    "build": "dotnet build WanderlustApi.csproj",
+    "build:release": "dotnet build WanderlustApi.csproj -c Release",
+    "publish": "dotnet publish WanderlustApi.csproj -c Release -o bin/Release/net8.0/publish",
+    "test-connection": "node scripts/test-ftp-connection.js"
+  },
+  "dependencies": {
+    "basic-ftp": "^5.0.4",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  },
+  "keywords": [
+    "deployment",
+    "ftp",
+    "dotnet",
+    "api"
+  ],
+  "author": "Wanderlust Team",
+  "license": "MIT"
+}
