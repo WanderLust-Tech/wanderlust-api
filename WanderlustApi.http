@@ -1,0 +1,6 @@
+@WanderlustApi_HostAddress = http://localhost:5070
+
+GET {{WanderlustApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
