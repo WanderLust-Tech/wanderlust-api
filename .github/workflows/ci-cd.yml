@@ -1,0 +1,149 @@
+name: .NET API CI/CD
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test & Build
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: testpassword
+          MYSQL_DATABASE: wanderlust_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Build
+      run: dotnet build --no-restore --configuration Release
+    
+    - name: Test
+      run: dotnet test --no-build --configuration Release --verbosity normal
+      env:
+        ConnectionStrings__DefaultConnection: "Server=localhost;Port=3306;Database=wanderlust_test;Uid=root;Pwd=testpassword;"
+    
+    - name: Publish
+      run: dotnet publish --no-build --configuration Release --output ./publish
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: wanderlust-api-build
+        path: ./publish
+
+  deploy-staging:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Deploy to Staging
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: wanderlust-api-build
+        path: ./publish
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment"
+        # Add your staging deployment commands here
+        # Example: rsync, docker deploy, Azure deployment, etc.
+
+  deploy-production:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: production
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: wanderlust-api-build
+        path: ./publish
+    
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production environment"
+        # Add your production deployment commands here
+        # Example: Azure App Service, AWS ECS, Docker deployment, etc.
+
+  security-scan:
+    runs-on: ubuntu-latest
+    name: Security Scan
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Security scan
+      run: |
+        # Install security scanning tools
+        dotnet tool install --global security-scan
+        # Run security scan (example command)
+        echo "Running security scan..."
+        
+    - name: Dependency vulnerability scan
+      run: |
+        # Check for known vulnerabilities in dependencies
+        dotnet list package --vulnerable --include-transitive
+        
+  code-quality:
+    runs-on: ubuntu-latest
+    name: Code Quality Analysis
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Code analysis
+      run: |
+        # Run code analysis
+        dotnet build --configuration Release --verbosity normal
+        
+    - name: Format check
+      run: |
+        # Check code formatting
+        dotnet format --verify-no-changes --verbosity normal
