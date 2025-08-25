@@ -197,11 +197,11 @@ jobs:
         
     - name: Deploy API to production via FTP
       env:
-        API_FTP_HOST: ${{ secrets.API_PROD_FTP_HOST }}
-        API_FTP_USER: ${{ secrets.API_PROD_FTP_USER }}
-        API_FTP_PASSWORD: ${{ secrets.API_PROD_FTP_PASSWORD }}
-        API_FTP_PORT: ${{ secrets.API_PROD_FTP_PORT }}
-        API_FTP_SECURE: ${{ secrets.API_PROD_FTP_SECURE }}
+        FTP_HOST: ${{ secrets.PROD_FTP_HOST }}
+        FTP_USER: ${{ secrets.PROD_FTP_USER }}
+        FTP_PASSWORD: ${{ secrets.PROD_FTP_PASSWORD }}
+        FTP_PORT: ${{ secrets.PROD_FTP_PORT }}
+        FTP_SECURE: ${{ secrets.PROD_FTP_SECURE }}
         API_FTP_REMOTE_PATH: ${{ secrets.API_PROD_FTP_REMOTE_PATH }}
         API_LOCAL_BUILD_PATH: ./publish
         BUILD_CONFIGURATION: Release

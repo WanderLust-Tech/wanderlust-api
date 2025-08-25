@@ -15,11 +15,11 @@ class ApiDeploymentManager {
     
     // Configuration from environment variables
     this.config = {
-      host: process.env.API_FTP_HOST,
-      user: process.env.API_FTP_USER,
-      password: process.env.API_FTP_PASSWORD,
-      port: process.env.API_FTP_PORT || 21,
-      secure: process.env.API_FTP_SECURE === 'true',
+      host: process.env.FTP_HOST,
+      user: process.env.FTP_USER,
+      password: process.env.FTP_PASSWORD,
+      port: process.env.FTP_PORT || 21,
+      secure: process.env.FTP_SECURE === 'true',
       remotePath: process.env.API_FTP_REMOTE_PATH || '/api',
       localPath: process.env.API_LOCAL_BUILD_PATH || './bin/Release/net8.0/publish',
       projectFile: process.env.API_PROJECT_FILE || './WanderlustApi.csproj',
