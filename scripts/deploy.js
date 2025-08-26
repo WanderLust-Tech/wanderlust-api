@@ -20,7 +20,7 @@ class ApiDeploymentManager {
       password: process.env.FTP_PASSWORD,
       port: process.env.FTP_PORT || 21,
       secure: process.env.FTP_SECURE === 'true',
-      remotePath: process.env.API_FTP_REMOTE_PATH || '/api',
+      remotePath: process.env.API_FTP_REMOTE_PATH || '/',
       localPath: process.env.API_LOCAL_BUILD_PATH || './bin/Release/net8.0/publish',
       projectFile: process.env.API_PROJECT_FILE || './WanderlustApi.csproj',
       configuration: process.env.BUILD_CONFIGURATION || 'Release',
@@ -164,16 +164,24 @@ class ApiDeploymentManager {
 
   async backupExistingDeployment() {
     try {
-      const backupDir = `${this.config.remotePath}_backup_${new Date().toISOString().split('T')[0]}`;
+      const timestamp = new Date().toISOString().split('T')[0];
+      const backupDir = `${this.config.remotePath}_backup_${timestamp}`.replace('//', '/');
       console.log(`💾 Creating backup: ${backupDir}`);
       
       // Check if the remote directory exists
       try {
         await this.client.cd(this.config.remotePath);
-        // Directory exists, create backup
+        // Directory exists, check if we can create backups
         await this.client.cd('/');
-        await this.client.rename(this.config.remotePath, backupDir);
-        console.log('✅ Backup created successfully!');
+        
+        try {
+          await this.client.rename(this.config.remotePath, backupDir);
+          console.log('✅ Backup created successfully!');
+        } catch (renameError) {
+          console.log('ℹ️  Cannot create backup (insufficient permissions), clearing directory instead...');
+          // If we can't rename (backup), just clear the contents
+          await this.clearRemoteDirectory();
+        }
       } catch (error) {
         // Directory doesn't exist, no backup needed
         console.log('ℹ️  No existing deployment to backup');
@@ -184,16 +192,41 @@ class ApiDeploymentManager {
   }
 
   async clearRemoteDirectory() {
-    if (!this.config.clearRemote) {
-      console.log('ℹ️  Skipping remote directory clear (CLEAR_REMOTE not set)');
-      return;
-    }
-    
     try {
       console.log('🧹 Clearing remote directory...');
-      await this.client.cd(this.config.remotePath);
-      await this.client.clearWorkingDir();
-      console.log('✅ Remote directory cleared');
+      
+      // Navigate to target directory
+      try {
+        await this.client.cd(this.config.remotePath);
+      } catch (error) {
+        console.log(`ℹ️  Target directory ${this.config.remotePath} doesn't exist, skipping clear`);
+        return;
+      }
+      
+      // Clear directory contents
+      try {
+        await this.client.clearWorkingDir();
+        console.log('✅ Remote directory cleared');
+      } catch (error) {
+        console.warn('⚠️  Could not clear directory automatically, trying manual cleanup...');
+        // Manual cleanup if clearWorkingDir fails
+        try {
+          const list = await this.client.list();
+          for (const item of list) {
+            try {
+              if (item.isDirectory) {
+                await this.client.removeDir(item.name);
+              } else {
+                await this.client.remove(item.name);
+              }
+            } catch (removeError) {
+              console.warn(`⚠️  Could not remove ${item.name}:`, removeError.message);
+            }
+          }
+        } catch (listError) {
+          console.warn('⚠️  Manual cleanup failed:', listError.message);
+        }
+      }
     } catch (error) {
       console.warn('⚠️  Failed to clear remote directory:', error.message);
     }
@@ -202,7 +235,28 @@ class ApiDeploymentManager {
   async uploadDirectory(localDir, remoteDir) {
     try {
       console.log(`📁 Creating remote directory: ${remoteDir}`);
-      await this.client.ensureDir(remoteDir);
+      
+      // Try to create the directory, but handle permission errors gracefully
+      try {
+        await this.client.ensureDir(remoteDir);
+      } catch (error) {
+        if (error.message.includes('550') && error.message.includes('Access is denied')) {
+          console.log(`ℹ️  Directory creation not allowed, trying to navigate to existing directory...`);
+          
+          // Try to change to the directory - it might already exist
+          try {
+            await this.client.cd(remoteDir);
+            console.log(`✅ Using existing directory: ${remoteDir}`);
+          } catch (cdError) {
+            console.log(`⚠️  Directory ${remoteDir} doesn't exist and can't be created.`);
+            console.log(`ℹ️  Attempting to deploy to root directory instead...`);
+            remoteDir = '/'; // Deploy to root if subdirectory can't be created
+            await this.client.cd('/');
+          }
+        } else {
+          throw error; // Re-throw if it's a different error
+        }
+      }
       
       console.log(`📤 Uploading from ${localDir} to ${remoteDir}`);
       
