@@ -207,7 +207,7 @@ jobs:
         BUILD_CONFIGURATION: Release
         CLEAR_REMOTE: true
         GITHUB_ACTIONS: true
-      run: node scripts/deploy.js
+      run: node scripts/deploy.js deploy
         
     - name: Upload deployment artifacts
       uses: actions/upload-artifact@v4
