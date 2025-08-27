@@ -429,7 +429,7 @@ class ApiDeploymentManager {
       await this.connect();
       
       // Step 4: Backup existing deployment
-      await this.backupExistingDeployment();
+      // await this.backupExistingDeployment();
       
       // Step 5: Clear remote directory if requested
       await this.clearRemoteDirectory();
