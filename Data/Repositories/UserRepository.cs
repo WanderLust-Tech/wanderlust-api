@@ -49,7 +49,8 @@ namespace WanderlustApi.Data.Repositories
                     FROM Users 
                     WHERE Id = @Id";
 
-                return await connection.QueryFirstOrDefaultAsync<User>(sql, new { Id = id });
+                var result = await connection.QueryFirstOrDefaultAsync(sql, new { Id = id });
+                return MapToUser(result);
             }
             catch (Exception ex)
             {
@@ -71,7 +72,8 @@ namespace WanderlustApi.Data.Repositories
                     FROM Users 
                     WHERE Email = @Email";
 
-                return await connection.QueryFirstOrDefaultAsync<User>(sql, new { Email = email });
+                var result = await connection.QueryFirstOrDefaultAsync(sql, new { Email = email });
+                return MapToUser(result);
             }
             catch (Exception ex)
             {
@@ -93,7 +95,8 @@ namespace WanderlustApi.Data.Repositories
                     FROM Users 
                     WHERE Username = @Username";
 
-                return await connection.QueryFirstOrDefaultAsync<User>(sql, new { Username = username });
+                var result = await connection.QueryFirstOrDefaultAsync(sql, new { Username = username });
+                return MapToUser(result);
             }
             catch (Exception ex)
             {
@@ -115,7 +118,8 @@ namespace WanderlustApi.Data.Repositories
                     FROM Users 
                     WHERE RefreshToken = @RefreshToken";
 
-                return await connection.QueryFirstOrDefaultAsync<User>(sql, new { RefreshToken = refreshToken });
+                var result = await connection.QueryFirstOrDefaultAsync(sql, new { RefreshToken = refreshToken });
+                return MapToUser(result);
             }
             catch (Exception ex)
             {
@@ -137,13 +141,48 @@ namespace WanderlustApi.Data.Repositories
                     FROM Users 
                     ORDER BY CreatedAt DESC";
 
-                return await connection.QueryAsync<User>(sql);
+                var results = await connection.QueryAsync(sql);
+                return results.Select(MapToUser).Where(u => u != null).Cast<User>();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting all users");
                 throw;
             }
+        }
+
+        private static User? MapToUser(dynamic? row)
+        {
+            if (row == null) return null;
+
+            var user = new User
+            {
+                Id = row.Id,
+                Username = row.Username ?? string.Empty,
+                Email = row.Email ?? string.Empty,
+                DisplayName = row.DisplayName ?? string.Empty,
+                PasswordHash = row.PasswordHash ?? string.Empty,
+                Bio = row.Bio,
+                AvatarUrl = row.AvatarUrl,
+                IsEmailVerified = row.IsEmailVerified,
+                IsActive = row.IsActive,
+                CreatedAt = row.CreatedAt,
+                LastLoginAt = row.LastLoginAt,
+                RefreshToken = row.RefreshToken,
+                RefreshTokenExpiryTime = row.RefreshTokenExpiryTime
+            };
+
+            // Parse Role enum from string
+            if (Enum.TryParse<UserRole>(row.Role?.ToString(), true, out UserRole role))
+            {
+                user.Role = role;
+            }
+            else
+            {
+                user.Role = UserRole.Member; // Default fallback
+            }
+
+            return user;
         }
 
         public async Task<User> CreateAsync(User user)
@@ -162,7 +201,25 @@ namespace WanderlustApi.Data.Repositories
                     
                     SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
-                var id = await connection.QuerySingleAsync<int>(sql, user);
+                // Create parameters with explicit type conversion for Role
+                var parameters = new
+                {
+                    Username = user.Username,
+                    Email = user.Email,
+                    DisplayName = user.DisplayName,
+                    PasswordHash = user.PasswordHash,
+                    Bio = user.Bio,
+                    AvatarUrl = user.AvatarUrl,
+                    Role = user.Role.ToString(), // Explicitly convert enum to string
+                    IsEmailVerified = user.IsEmailVerified,
+                    IsActive = user.IsActive,
+                    CreatedAt = user.CreatedAt,
+                    LastLoginAt = user.LastLoginAt,
+                    RefreshToken = user.RefreshToken,
+                    RefreshTokenExpiryTime = user.RefreshTokenExpiryTime
+                };
+
+                var id = await connection.QuerySingleAsync<int>(sql, parameters);
                 user.Id = id;
                 
                 _logger.LogInformation("Created user with ID {UserId}", id);
@@ -190,7 +247,25 @@ namespace WanderlustApi.Data.Repositories
                         RefreshTokenExpiryTime = @RefreshTokenExpiryTime
                     WHERE Id = @Id";
 
-                var rowsAffected = await connection.ExecuteAsync(sql, user);
+                // Create parameters with explicit type conversion for Role
+                var parameters = new
+                {
+                    Id = user.Id,
+                    Username = user.Username,
+                    Email = user.Email,
+                    DisplayName = user.DisplayName,
+                    PasswordHash = user.PasswordHash,
+                    Bio = user.Bio,
+                    AvatarUrl = user.AvatarUrl,
+                    Role = user.Role.ToString(), // Explicitly convert enum to string
+                    IsEmailVerified = user.IsEmailVerified,
+                    IsActive = user.IsActive,
+                    LastLoginAt = user.LastLoginAt,
+                    RefreshToken = user.RefreshToken,
+                    RefreshTokenExpiryTime = user.RefreshTokenExpiryTime
+                };
+
+                var rowsAffected = await connection.ExecuteAsync(sql, parameters);
                 
                 if (rowsAffected == 0)
                 {
