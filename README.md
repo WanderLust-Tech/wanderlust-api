@@ -2,9 +2,9 @@
 
 A comprehensive, enterprise-grade .NET 8 Web API backend for the Wanderlust Knowledge Base platform, providing robust data management, real-time communication, and advanced content management services for the Chromium development learning platform.
 
-## 🌟 Current Version: 3.3.0
+## 🌟 Current Version: 4.0.0
 
-**Latest Update**: Added comprehensive real-time communication features with SignalR, enterprise-grade security, CMS functionality, and complete CI/CD deployment system.
+**Latest Update**: Migrated from Entity Framework Core to Dapper with Microsoft SQL Server, enhanced error handling and logging, added deployment configuration with stdout logging for production troubleshooting.
 
 ## 🚀 Features Overview
 
@@ -16,7 +16,14 @@ A comprehensive, enterprise-grade .NET 8 Web API backend for the Wanderlust Know
 - **Input Validation** - SQL injection, XSS, and command injection protection
 - **HTTPS Enforcement** - Production-ready SSL/TLS with HSTS
 
-### 📊 **Content Management System (CMS)**
+### �️ **Data Access & Performance**
+- **Dapper ORM** - High-performance micro-ORM for optimal database operations
+- **Microsoft SQL Server** - Enterprise-grade database with full T-SQL support
+- **Connection Factory Pattern** - Efficient connection management and pooling
+- **Repository Pattern** - Clean separation of data access logic
+- **Manual Schema Management** - Direct SQL scripts for precise database control
+
+### �📊 **Content Management System (CMS)**
 - **Content Management** - Full CRUD operations for articles and media
 - **Media Library** - File upload, storage, and management system
 - **Content Templates** - Reusable content templates and workflows
@@ -37,16 +44,21 @@ A comprehensive, enterprise-grade .NET 8 Web API backend for the Wanderlust Know
 - **Content Validation** - Pre-sync validation with detailed reporting
 
 ### 🛡️ **Error Handling & Resilience**
-- **Comprehensive Error Handling** - Categorized error management system
+- **Custom API Response Format** - Standardized response wrapper with metadata
+- **Global Exception Handling** - Centralized error processing with detailed logging
+- **Validation Filters** - Automatic model validation with structured error responses
+- **Comprehensive Error Codes** - Categorized error management system
 - **Offline Support** - Graceful degradation and automatic recovery
 - **Loading States** - Professional progress tracking and user feedback
 - **Circuit Breaker Patterns** - Smart failure detection and recovery
 
 ### 📝 **Logging & Monitoring**
-- **Serilog File Logging** - Structured logging to daily rolling files
-- **Performance Monitoring** - Request/response time tracking
+- **Serilog Structured Logging** - Enhanced logging to files with daily rolling
+- **Stdout Logging** - Production error diagnosis with web.config integration
+- **Performance Monitoring** - Request/response time tracking with detailed metrics
 - **Security Audit Logging** - Authentication and authorization events
 - **Health Checks** - Comprehensive API health monitoring
+- **Startup Diagnostics** - Detailed application initialization logging
 
 ### 🚀 **Deployment & DevOps**
 - **GitHub Actions CI/CD** - Automated build, test, and deployment
@@ -58,12 +70,13 @@ A comprehensive, enterprise-grade .NET 8 Web API backend for the Wanderlust Know
 
 ### Technology Stack
 - **.NET 8** - Latest LTS version with improved performance
-- **Entity Framework Core** - Modern ORM with MySQL support
+- **Dapper** - High-performance micro-ORM for optimal database access
+- **Microsoft SQL Server** - Enterprise-grade relational database
 - **SignalR** - Real-time web communication
-- **Serilog** - Structured logging framework
+- **Serilog** - Structured logging framework with file and stdout support
 - **JWT** - JSON Web Token authentication
-- **MySQL** - Primary database with full-text search
-- **Redis** (Optional) - Caching and session storage
+- **Custom Response Wrappers** - Standardized API responses with metadata
+- **Global Exception Handling** - Centralized error processing
 
 ### Project Structure
 ```
@@ -562,17 +575,21 @@ npm run publish:ftp
 
 ## 🛠️ Technology Stack
 
-- **.NET 8** - Latest .NET framework
-- **ASP.NET Core Web API** - RESTful API framework
-- **Entity Framework Core 8** - Modern ORM
-- **MySQL** - Relational database
-- **Pomelo.EntityFrameworkCore.MySql** - MySQL provider
+- **.NET 8** - Latest .NET LTS framework with enhanced performance
+- **ASP.NET Core Web API** - RESTful API framework with built-in dependency injection
+- **Dapper** - High-performance micro-ORM for direct SQL control
+- **Microsoft SQL Server** - Enterprise-grade relational database
+- **Microsoft.Data.SqlClient** - Optimized SQL Server data provider
+- **Serilog** - Structured logging with file and stdout support
+- **Custom Response Framework** - Standardized API responses with metadata
+- **Global Exception Handling** - Centralized error processing and logging
 - **Swashbuckle.AspNetCore** - Swagger/OpenAPI documentation
 
 ## 📋 Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [MySQL Server 8.0+](https://dev.mysql.com/downloads/mysql/)
+- [Microsoft SQL Server 2019+](https://www.microsoft.com/en-us/sql-server/sql-server-downloads) or [SQL Server Express](https://www.microsoft.com/en-us/sql-server/sql-server-editions-express)
+- [SQL Server Management Studio (SSMS)](https://docs.microsoft.com/en-us/sql/ssms/download-sql-server-management-studio-ssms) (recommended)
 - [Git](https://git-scm.com/)
 
 ## 🚦 Quick Start
@@ -586,15 +603,31 @@ cd wanderlust-api
 
 ### 2. Configure Database
 
-Update the connection string in `appsettings.Development.json`:
+#### SQL Server Setup
 
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=localhost;Port=3306;Database=wanderlust_dev;Uid=your_username;Pwd=your_password;"
-  }
-}
-```
+1. **Create Database**: Run the SQL Server schema script to set up your database:
+   ```sql
+   -- Execute the script: Scripts/01_CreateDatabase_SqlServer.sql
+   -- This creates the database, tables, and sample data
+   ```
+
+2. **Update Connection String**: Configure `appsettings.Development.json`:
+   ```json
+   {
+     "ConnectionStrings": {
+       "DefaultConnection": "Server=localhost;Database=WanderlustDB;User Id=your_username;Password=your_password;TrustServerCertificate=true;Encrypt=true;"
+     }
+   }
+   ```
+
+3. **Production Configuration**: Update `appsettings.Production.json` for your production SQL Server:
+   ```json
+   {
+     "ConnectionStrings": {
+       "DefaultConnection": "Server=your-sql-server;Database=WanderlustDB;User Id=your-username;Password=your-password;TrustServerCertificate=true;Encrypt=true;"
+     }
+   }
+   ```
 
 ### 3. Install Dependencies
 
@@ -602,11 +635,12 @@ Update the connection string in `appsettings.Development.json`:
 dotnet restore
 ```
 
-### 4. Apply Database Migrations
+### 4. Database Setup
 
-```bash
-dotnet ef database update
-```
+**No migrations needed!** The project uses Dapper with manual SQL scripts for better control:
+
+1. Execute `Scripts/01_CreateDatabase_SqlServer.sql` in SQL Server Management Studio
+2. Verify tables are created with sample data
 
 ### 5. Run the Application
 
@@ -617,6 +651,18 @@ dotnet run
 The API will be available at:
 - **HTTP**: http://localhost:5070
 - **Swagger UI**: http://localhost:5070/swagger
+
+## 🔧 Deployment Configuration
+
+### Production Error Diagnosis
+
+The project includes `web.config` for IIS deployment with stdout logging enabled:
+
+```xml
+<aspNetCore stdoutLogEnabled="true" stdoutLogFile=".\logs\stdout" />
+```
+
+This allows you to diagnose 500.30 errors by checking the stdout logs in the `logs` folder.
 
 ## 📚 API Endpoints
 
