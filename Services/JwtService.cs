@@ -30,7 +30,7 @@ namespace WanderlustApi.Services
             _secretKey = configuration["JWT:SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
             _issuer = configuration["JWT:Issuer"] ?? "WanderlustApi";
             _audience = configuration["JWT:Audience"] ?? "WanderlustClient";
-            _accessTokenExpirationMinutes = int.Parse(configuration["JWT:AccessTokenExpirationMinutes"] ?? "60");
+            _accessTokenExpirationMinutes = int.Parse(configuration["JWT:ExpirationMinutes"] ?? "60");
             _refreshTokenExpirationDays = int.Parse(configuration["JWT:RefreshTokenExpirationDays"] ?? "7");
         }
 
@@ -42,13 +42,13 @@ namespace WanderlustApi.Services
             var claims = new List<Claim>
             {
                 new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new(ClaimTypes.Name, user.Username),
-                new(ClaimTypes.Email, user.Email),
-                new("DisplayName", user.DisplayName),
+                new(ClaimTypes.Name, user.Username ?? string.Empty),
+                new(ClaimTypes.Email, user.Email ?? string.Empty),
+                new("DisplayName", user.DisplayName ?? string.Empty),
                 new(ClaimTypes.Role, user.Role.ToString()),
                 new("IsEmailVerified", user.IsEmailVerified.ToString()),
                 new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new(JwtRegisteredClaimNames.Email, user.Email),
+                new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
                 new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
             };
