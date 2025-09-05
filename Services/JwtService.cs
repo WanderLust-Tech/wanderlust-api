@@ -36,6 +36,9 @@ namespace WanderlustApi.Services
 
         public string GenerateAccessToken(User user)
         {
+            if (user == null)
+                throw new ArgumentNullException(nameof(user));
+            
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.UTF8.GetBytes(_secretKey);
 
@@ -53,6 +56,15 @@ namespace WanderlustApi.Services
                 new(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
             };
 
+            // Validate all claim values are not null
+            foreach (var claim in claims)
+            {
+                if (claim.Value == null)
+                {
+                    throw new InvalidOperationException($"Claim {claim.Type} has null value");
+                }
+            }
+
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),
@@ -63,7 +75,16 @@ namespace WanderlustApi.Services
             };
 
             var token = tokenHandler.CreateToken(tokenDescriptor);
-            return tokenHandler.WriteToken(token);
+            var tokenString = tokenHandler.WriteToken(token);
+            
+            // Validate generated token format
+            var parts = tokenString.Split('.');
+            if (parts.Length != 3)
+            {
+                throw new InvalidOperationException($"Generated JWT has invalid format. Expected 3 parts, got {parts.Length}");
+            }
+            
+            return tokenString;
         }
 
         public string GenerateRefreshToken()

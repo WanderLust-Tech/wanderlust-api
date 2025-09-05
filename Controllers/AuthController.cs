@@ -159,6 +159,45 @@ namespace WanderlustApi.Controllers
                 "User logged in successfully"));
         }
 
+        [HttpGet("test-jwt")]
+        public ActionResult<ApiResponse<object>> TestJWT()
+        {
+            try
+            {
+                // Create a test user for JWT generation
+                var testUser = new User
+                {
+                    Id = 1,
+                    Username = "testuser",
+                    Email = "test@example.com",
+                    DisplayName = "Test User",
+                    Role = UserRole.Member,
+                    IsEmailVerified = true
+                };
+
+                var token = _jwtService.GenerateAccessToken(testUser);
+                var parts = token.Split('.');
+                
+                return Ok(ApiResponse<object>.SuccessResponse(new
+                {
+                    Token = token,
+                    TokenLength = token.Length,
+                    Parts = parts.Length,
+                    Header = parts.Length > 0 ? parts[0] : "missing",
+                    Payload = parts.Length > 1 ? parts[1] : "missing",
+                    Signature = parts.Length > 2 ? parts[2] : "missing",
+                    IsValidFormat = parts.Length == 3
+                }, "JWT test completed"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse.ErrorResponse(
+                    "JWT test failed",
+                    new ApiError { Code = "JWT_TEST_ERROR", Message = ex.Message },
+                    HttpStatusCode.BadRequest));
+            }
+        }
+
         [HttpPost("refresh-token")]
         public async Task<ActionResult<ApiResponse<AuthResponse>>> RefreshToken(RefreshTokenRequest request)
         {
