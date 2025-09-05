@@ -198,6 +198,40 @@ namespace WanderlustApi.Controllers
             }
         }
 
+        [HttpGet("config-status")]
+        public ActionResult<ApiResponse<object>> GetConfigurationStatus()
+        {
+            try
+            {
+                var config = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+                var (isValid, missingKeys) = WanderlustApi.Configuration.EmbeddedConfiguration.ValidateConfiguration(config);
+                
+                return Ok(ApiResponse<object>.SuccessResponse(new
+                {
+                    IsValid = isValid,
+                    MissingKeys = missingKeys,
+                    HasJwtSecret = !string.IsNullOrEmpty(config["JWT:SecretKey"]),
+                    JwtIssuer = config["JWT:Issuer"],
+                    JwtAudience = config["JWT:Audience"],
+                    FrontendUrl = config["FRONTEND_URL"],
+                    CorsOrigins = config.GetSection("CORS:AllowedOrigins").Get<string[]>(),
+                    HasConnectionString = !string.IsNullOrEmpty(config.GetConnectionString("DefaultConnection")),
+                    Environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+                    ConfigurationSources = config.AsEnumerable()
+                        .Where(kvp => !kvp.Key.Contains("Secret") && !kvp.Key.Contains("Password"))
+                        .Take(10)
+                        .ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                }, "Configuration status retrieved"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse.ErrorResponse(
+                    "Configuration status check failed",
+                    new ApiError { Code = "CONFIG_CHECK_ERROR", Message = ex.Message },
+                    HttpStatusCode.BadRequest));
+            }
+        }
+
         [HttpPost("refresh-token")]
         public async Task<ActionResult<ApiResponse<AuthResponse>>> RefreshToken(RefreshTokenRequest request)
         {
