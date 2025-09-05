@@ -5,25 +5,33 @@ Some hosting providers (including IONOS and others) remove or overwrite `appsett
 
 ## Solution Implemented
 
-### 1. Embedded Configuration System
+### 1. GitHub Secrets Integration (Recommended)
+- **Security**: Sensitive configuration stored securely in GitHub Secrets
+- **Build-Time Injection**: Secrets are embedded during CI/CD process
+- **Source Code Safety**: No hardcoded secrets in repository
+- **Setup Guide**: See `GITHUB_SECRETS_SETUP.md` for complete configuration
+
+### 2. Embedded Configuration System
 - **File**: `Configuration/EmbeddedConfiguration.cs`
-- **Purpose**: Contains all production configuration values embedded directly in the application code
+- **Purpose**: Contains configuration values embedded directly in the application code
+- **Source**: Values populated from GitHub Secrets during build process
 - **Benefit**: Cannot be removed by hosting providers since it's compiled into the DLL
 
-### 2. Configuration Hardening in Program.cs
+### 3. Configuration Hardening in Program.cs
 - **Environment Detection**: Automatically applies embedded configuration in production
 - **Environment Variable Support**: Allows overriding via environment variables
 - **Validation System**: Checks all required configuration is present
 - **Fallback Chain**: appsettings.json → environment variables → embedded defaults
 
-### 3. Diagnostic Endpoints
+### 4. Diagnostic Endpoints
 - **`/api/auth/config-status`**: Shows current configuration status and missing keys
 - **`/api/auth/test-jwt`**: Tests JWT generation to verify configuration
 
 ## Configuration Priority (Highest to Lowest)
-1. Environment Variables (set by hosting provider)
+1. Runtime Environment Variables (set by hosting provider)
 2. appsettings.Production.json (if not removed)
-3. Embedded Configuration (always available)
+3. Embedded Configuration (from GitHub Secrets)
+4. Development Fallbacks (localhost values)
 
 ## Environment Variables (Optional)
 If your hosting provider supports environment variables, you can set:

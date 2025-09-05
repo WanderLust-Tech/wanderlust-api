@@ -57,12 +57,30 @@ jobs:
       run: dotnet restore WanderlustApi.csproj
       
     - name: Build API
+      env:
+        # GitHub Secrets injected as build-time environment variables
+        BUILD_CONNECTION_STRING: ${{ secrets.CONNECTION_STRING }}
+        BUILD_JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+        BUILD_JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+        BUILD_JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
+        BUILD_JWT_EXPIRATION_MINUTES: ${{ secrets.JWT_EXPIRATION_MINUTES }}
+        BUILD_JWT_REFRESH_EXPIRATION_DAYS: ${{ secrets.JWT_REFRESH_EXPIRATION_DAYS }}
+        BUILD_FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
       run: dotnet build WanderlustApi.csproj --configuration Release --no-restore
       
     - name: Run tests
       run: dotnet test WanderlustApi.csproj --configuration Release --no-build --verbosity normal
       
     - name: Publish API
+      env:
+        # GitHub Secrets injected as build-time environment variables  
+        BUILD_CONNECTION_STRING: ${{ secrets.CONNECTION_STRING }}
+        BUILD_JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+        BUILD_JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+        BUILD_JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
+        BUILD_JWT_EXPIRATION_MINUTES: ${{ secrets.JWT_EXPIRATION_MINUTES }}
+        BUILD_JWT_REFRESH_EXPIRATION_DAYS: ${{ secrets.JWT_REFRESH_EXPIRATION_DAYS }}
+        BUILD_FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
       run: dotnet publish WanderlustApi.csproj --configuration Release --output ./publish --no-build
       
     - name: Upload API artifacts

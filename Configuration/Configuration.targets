@@ -1,0 +1,61 @@
+<Project>
+  <!-- IONOS-Compatible Configuration Generation -->
+  <!-- This target replaces placeholders in GeneratedConfiguration.cs with actual values from environment variables during build -->
+  
+  <PropertyGroup>
+    <GeneratedConfigurationFile>$(MSBuildProjectDirectory)\Configuration\GeneratedConfiguration.cs</GeneratedConfigurationFile>
+  </PropertyGroup>
+
+  <Target Name="ReplaceConfigurationPlaceholders" BeforeTargets="CoreCompile" Condition="'$(Configuration)' == 'Release'">
+    
+    <Message Text="Replacing configuration placeholders with build-time values..." Importance="high" />
+    
+    <!-- Get environment variables with fallbacks -->
+    <PropertyGroup>
+      <BuildConnectionString Condition="'$(BUILD_CONNECTION_STRING)' != ''">$(BUILD_CONNECTION_STRING)</BuildConnectionString>
+      <BuildConnectionString Condition="'$(BuildConnectionString)' == ''">Data Source=localhost;Initial Catalog=WanderlustDb;Integrated Security=true;</BuildConnectionString>
+      
+      <BuildJwtSecret Condition="'$(BUILD_JWT_SECRET_KEY)' != ''">$(BUILD_JWT_SECRET_KEY)</BuildJwtSecret>
+      <BuildJwtSecret Condition="'$(BuildJwtSecret)' == ''">DEFAULT_DEVELOPMENT_JWT_SECRET_REPLACE_IN_PRODUCTION</BuildJwtSecret>
+      
+      <BuildJwtIssuer Condition="'$(BUILD_JWT_ISSUER)' != ''">$(BUILD_JWT_ISSUER)</BuildJwtIssuer>
+      <BuildJwtIssuer Condition="'$(BuildJwtIssuer)' == ''">WanderlustApi</BuildJwtIssuer>
+      
+      <BuildJwtAudience Condition="'$(BUILD_JWT_AUDIENCE)' != ''">$(BUILD_JWT_AUDIENCE)</BuildJwtAudience>
+      <BuildJwtAudience Condition="'$(BuildJwtAudience)' == ''">WanderlustClient</BuildJwtAudience>
+      
+      <BuildJwtExpiration Condition="'$(BUILD_JWT_EXPIRATION_MINUTES)' != ''">$(BUILD_JWT_EXPIRATION_MINUTES)</BuildJwtExpiration>
+      <BuildJwtExpiration Condition="'$(BuildJwtExpiration)' == ''">60</BuildJwtExpiration>
+      
+      <BuildJwtRefreshExpiration Condition="'$(BUILD_JWT_REFRESH_EXPIRATION_DAYS)' != ''">$(BUILD_JWT_REFRESH_EXPIRATION_DAYS)</BuildJwtRefreshExpiration>
+      <BuildJwtRefreshExpiration Condition="'$(BuildJwtRefreshExpiration)' == ''">7</BuildJwtRefreshExpiration>
+      
+      <BuildFrontendUrl Condition="'$(BUILD_FRONTEND_URL)' != ''">$(BUILD_FRONTEND_URL)</BuildFrontendUrl>
+      <BuildFrontendUrl Condition="'$(BuildFrontendUrl)' == ''">http://localhost:3000</BuildFrontendUrl>
+    </PropertyGroup>
+    
+    <!-- Read the current GeneratedConfiguration.cs file -->
+    <ReadLinesFromFile File="$(GeneratedConfigurationFile)">
+      <Output TaskParameter="Lines" ItemName="OriginalConfigLines" />
+    </ReadLinesFromFile>
+    
+    <!-- Prepare the content with replacements -->
+    <PropertyGroup>
+      <ConfigContent>@(OriginalConfigLines, '%0A')</ConfigContent>
+      <ConfigContent>$(ConfigContent.Replace('BUILD_TIME_CONNECTION_STRING_PLACEHOLDER', '$(BuildConnectionString)'))</ConfigContent>
+      <ConfigContent>$(ConfigContent.Replace('BUILD_TIME_JWT_SECRET_PLACEHOLDER', '$(BuildJwtSecret)'))</ConfigContent>
+      <ConfigContent>$(ConfigContent.Replace('BUILD_TIME_JWT_ISSUER_PLACEHOLDER', '$(BuildJwtIssuer)'))</ConfigContent>
+      <ConfigContent>$(ConfigContent.Replace('BUILD_TIME_JWT_AUDIENCE_PLACEHOLDER', '$(BuildJwtAudience)'))</ConfigContent>
+      <ConfigContent>$(ConfigContent.Replace('BUILD_TIME_JWT_EXPIRATION_MINUTES_PLACEHOLDER', '$(BuildJwtExpiration)'))</ConfigContent>
+      <ConfigContent>$(ConfigContent.Replace('BUILD_TIME_JWT_REFRESH_EXPIRATION_DAYS_PLACEHOLDER', '$(BuildJwtRefreshExpiration)'))</ConfigContent>
+      <ConfigContent>$(ConfigContent.Replace('BUILD_TIME_FRONTEND_URL_PLACEHOLDER', '$(BuildFrontendUrl)'))</ConfigContent>
+    </PropertyGroup>
+    
+    <!-- Write the updated file -->
+    <WriteLinesToFile File="$(GeneratedConfigurationFile)" Lines="$(ConfigContent)" Overwrite="true" />
+    
+    <Message Text="Configuration placeholders replaced successfully" Importance="high" />
+    
+  </Target>
+  
+</Project>

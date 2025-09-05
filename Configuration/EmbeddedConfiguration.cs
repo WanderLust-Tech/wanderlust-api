@@ -2,31 +2,44 @@ namespace WanderlustApi.Configuration
 {
     /// <summary>
     /// Embedded configuration for hosting environments that remove appsettings files
+    /// IONOS-compatible: No environment variable access, no unmanaged code
     /// </summary>
     public static class EmbeddedConfiguration
     {
         /// <summary>
         /// Gets the default configuration values as a dictionary
-        /// Useful when appsettings files are removed by hosting provider
+        /// Uses build-time generated values to avoid environment variable restrictions
         /// </summary>
-        public static Dictionary<string, string> GetDefaultConfiguration()
+        public static Dictionary<string, string?> GetDefaultConfiguration()
         {
-            return new Dictionary<string, string>
+            // First try to get build-time generated configuration
+            var buildTimeConfig = GeneratedConfiguration.GetBuildTimeConfiguration();
+            
+            // Check if placeholders were replaced during build
+            var hasBuildTimeValues = !buildTimeConfig["JWT:SecretKey"].Contains("PLACEHOLDER");
+            
+            if (hasBuildTimeValues)
             {
-                // Database Configuration
+                return buildTimeConfig;
+            }
+            
+            // Fallback to safe default values (for local development)
+            return new Dictionary<string, string?>
+            {
+                // Database Configuration - safe development fallback
                 ["ConnectionStrings:DefaultConnection"] = 
-                    "Data Source=db1062671304.hosting-data.io,1433;Initial Catalog=db1062671304;User Id=dbo1062671304;Password=Milrendaria_1976#;",
+                    "Data Source=localhost;Initial Catalog=WanderlustDb;Integrated Security=true;",
                 
-                // JWT Configuration
-                ["JWT:SecretKey"] = "wCDHSUPSjlP+LoqKrNiW6LQARIuFCXewRhZDVvDeYMM=",
+                // JWT Configuration - generates secure random key for development
+                ["JWT:SecretKey"] = GenerateFallbackJwtSecret(),
                 ["JWT:Issuer"] = "WanderlustApi",
                 ["JWT:Audience"] = "WanderlustClient",
                 ["JWT:ExpirationMinutes"] = "60",
                 ["JWT:RefreshTokenExpirationDays"] = "7",
                 
-                // CORS Configuration
-                ["CORS:AllowedOrigins:0"] = "https://kb.wander-lust.tech",
-                ["FRONTEND_URL"] = "https://kb.wander-lust.tech",
+                // CORS Configuration - development fallback
+                ["CORS:AllowedOrigins:0"] = "http://localhost:3000",
+                ["FRONTEND_URL"] = "http://localhost:3000",
                 
                 // Logging Configuration
                 ["Logging:LogLevel:Default"] = "Information",
@@ -44,39 +57,23 @@ namespace WanderlustApi.Configuration
         }
         
         /// <summary>
-        /// Gets configuration with environment variable overrides
+        /// Generates a fallback JWT secret if none is provided
+        /// Should only be used in development - production should always have a secret
         /// </summary>
-        public static Dictionary<string, string> GetConfigurationWithEnvironmentOverrides()
+        private static string GenerateFallbackJwtSecret()
         {
-            var config = GetDefaultConfiguration();
-            
-            // Override with environment variables if available
-            var envOverrides = new Dictionary<string, string>
+            // Generate a random 256-bit key for development fallback
+            var key = new byte[32];
+            using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
             {
-                ["ConnectionStrings:DefaultConnection"] = Environment.GetEnvironmentVariable("CONNECTION_STRING"),
-                ["JWT:SecretKey"] = Environment.GetEnvironmentVariable("JWT_SECRET_KEY"),
-                ["JWT:Issuer"] = Environment.GetEnvironmentVariable("JWT_ISSUER"),
-                ["JWT:Audience"] = Environment.GetEnvironmentVariable("JWT_AUDIENCE"),
-                ["JWT:ExpirationMinutes"] = Environment.GetEnvironmentVariable("JWT_EXPIRATION_MINUTES"),
-                ["JWT:RefreshTokenExpirationDays"] = Environment.GetEnvironmentVariable("JWT_REFRESH_EXPIRATION_DAYS"),
-                ["CORS:AllowedOrigins:0"] = Environment.GetEnvironmentVariable("FRONTEND_URL"),
-                ["FRONTEND_URL"] = Environment.GetEnvironmentVariable("FRONTEND_URL")
-            };
-            
-            // Apply non-null environment overrides
-            foreach (var kvp in envOverrides)
-            {
-                if (!string.IsNullOrEmpty(kvp.Value))
-                {
-                    config[kvp.Key] = kvp.Value;
-                }
+                rng.GetBytes(key);
             }
-            
-            return config;
+            return Convert.ToBase64String(key);
         }
         
         /// <summary>
         /// Validates that all required configuration is present
+        /// IONOS-compatible: No environment variable access
         /// </summary>
         public static (bool IsValid, List<string> MissingKeys) ValidateConfiguration(IConfiguration configuration)
         {

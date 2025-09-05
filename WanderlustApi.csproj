@@ -20,4 +20,12 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
+  <!-- IONOS-compatible configuration generation using PowerShell -->
+  <Target Name="ReplaceConfigurationPlaceholders" BeforeTargets="CoreCompile" Condition="'$(Configuration)' == 'Release'">
+    <Message Text="Running IONOS-compatible configuration replacement..." Importance="high" />
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;scripts\Replace-ConfigPlaceholders.ps1&quot;" 
+          ContinueOnError="false" 
+          WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
 </Project>
