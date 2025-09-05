@@ -16,7 +16,8 @@ namespace WanderlustApi.Configuration
             var buildTimeConfig = GeneratedConfiguration.GetBuildTimeConfiguration();
             
             // Check if placeholders were replaced during build
-            var hasBuildTimeValues = !buildTimeConfig["JWT:SecretKey"].Contains("PLACEHOLDER");
+            var jwtSecret = buildTimeConfig["JWT:SecretKey"];
+            var hasBuildTimeValues = jwtSecret != null && !jwtSecret.Contains("PLACEHOLDER");
             
             if (hasBuildTimeValues)
             {
