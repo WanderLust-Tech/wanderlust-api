@@ -42,15 +42,15 @@ namespace WanderlustApi.Configuration
                 ["CORS:AllowedOrigins:0"] = "http://localhost:3000",
                 ["FRONTEND_URL"] = "http://localhost:3000",
                 
-                // Logging Configuration
-                ["Logging:LogLevel:Default"] = "Information",
-                ["Logging:LogLevel:Microsoft.AspNetCore"] = "Warning",
-                ["Logging:LogLevel:Microsoft.AspNetCore.Hosting.Internal.WebHost"] = "Information",
-                ["Logging:LogLevel:Microsoft.EntityFrameworkCore"] = "Warning",
-                ["Logging:LogLevel:WanderlustApi"] = "Information",
-                ["Logging:LogLevel:WanderlustApi.Data"] = "Information",
-                ["Logging:LogLevel:System.Net.Http.HttpClient"] = "Warning",
-                ["Logging:Console:IncludeScopes"] = "true",
+                // Logging Configuration - DISABLED (set to None to disable all logging)
+                ["Logging:LogLevel:Default"] = "None",
+                ["Logging:LogLevel:Microsoft.AspNetCore"] = "None",
+                ["Logging:LogLevel:Microsoft.AspNetCore.Hosting.Internal.WebHost"] = "None",
+                ["Logging:LogLevel:Microsoft.EntityFrameworkCore"] = "None",
+                ["Logging:LogLevel:WanderlustApi"] = "None",
+                ["Logging:LogLevel:WanderlustApi.Data"] = "None",
+                ["Logging:LogLevel:System.Net.Http.HttpClient"] = "None",
+                ["Logging:Console:IncludeScopes"] = "false",
                 
                 // General Configuration
                 ["AllowedHosts"] = "*"
