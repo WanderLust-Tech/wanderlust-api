@@ -37,5 +37,37 @@ namespace WanderlustApi.Data.Repositories
                 throw;
             }
         }
+
+        public async Task<IEnumerable<Article>> GetByTitleAsync(string title)
+        {
+            try
+            {
+                using var connection = await _connectionFactory.CreateConnectionAsync();
+                const string sql = @"SELECT * FROM Articles WHERE Title LIKE @Title AND IsPublished = 1 ORDER BY CreatedAt DESC";
+                var articles = await connection.QueryAsync<Article>(sql, new { Title = $"%{title}%" });
+                return articles;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting articles by title");
+                throw;
+            }
+        }
+
+        public async Task<IEnumerable<Article>> GetByCategoryAsync(string category)
+        {
+            try
+            {
+                using var connection = await _connectionFactory.CreateConnectionAsync();
+                const string sql = @"SELECT * FROM Articles WHERE Category = @Category AND IsPublished = 1 ORDER BY CreatedAt DESC";
+                var articles = await connection.QueryAsync<Article>(sql, new { Category = category });
+                return articles;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting articles by category");
+                throw;
+            }
+        }
     }
 }
