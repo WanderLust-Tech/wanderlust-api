@@ -36,15 +36,17 @@ Health check endpoints (no auth required):
 ## Directory Structure
 
 ```
-Controllers/        # HTTP endpoints (AuthController, CodeExamplesController, CommunityController, etc.)
+Controllers/        # HTTP endpoints (AuthController, CodeExamplesController, CommunityController, OmahaController, ReleasesController, etc.)
 Services/           # Business logic (JwtService, PasswordService, UserService, RealTimeNotificationService)
 Data/
-├── Repositories/   # Dapper-based data access (IUserRepository, ICodeExampleRepository, etc.)
+├── Entities/       # DB entity classes (BrowserRelease, etc.)
+├── Repositories/   # Dapper-based data access (IUserRepository, ICodeExampleRepository, IBrowserReleaseRepository, etc.)
 └── Mock/           # Mock repositories — returned if DB unavailable at startup
 Models/             # Domain entities (User, Article, CodeExample, CommunityPost, ApiResponse<T>)
+├── Omaha/          # Omaha 4 protocol DTOs (OmahaRequest, OmahaResponse, OmahaManifest, OmahaPackage)
 DTOs/               # Request/response data transfer objects
 Middleware/         # GlobalExceptionHandling, InputValidation, RateLimiting, SecurityHeaders
-Filters/            # ValidationFilterAttribute, ApiResponseWrapperAttribute
+Filters/            # ValidationFilterAttribute, ApiResponseWrapperAttribute, SkipResponseWrapperAttribute
 Hubs/               # CommunityHub.cs (SignalR)
 Configuration/      # EmbeddedConfiguration.cs (IONOS fallback), SecurityConfiguration.cs
 Migrations/         # Raw SQL migration scripts (not EF Core)
@@ -53,7 +55,8 @@ Migrations/         # Raw SQL migration scripts (not EF Core)
 ## Architecture Patterns
 
 - **Repository pattern**: All data access through `IXxxRepository` interfaces — enables the mock fallback.
-- **`ApiResponse<T>` wrapper**: Every endpoint returns `{ success, data, error, message, timestamp, requestId, statusCode }`. The `ApiResponseWrapperAttribute` filter applies this automatically.
+- **`ApiResponse<T>` wrapper**: Every endpoint returns `{ success, data, error, message, timestamp, requestId, statusCode }`. The `ApiResponseWrapperAttribute` filter applies this automatically. To return raw JSON (e.g. for external wire protocols), decorate the controller or action with `[SkipResponseWrapper]`.
+- **Omaha 4 update protocol**: `POST /v4/update` (anonymous) — serves browser installer metadata to `custom-omaha-client`. Admin releases managed via `GET/POST /api/releases`. See [`UPDATE_PROTOCOL.md`](UPDATE_PROTOCOL.md) for full documentation.
 - **Mock fallback**: If the DB connection fails at startup, the API switches to `MockXxxRepository` implementations and continues running. Check `/api/health/database` to confirm DB status.
 - **Standard error codes**: Use the `ApiErrorCodes` class (e.g., `AUTHENTICATION_FAILED`, `VALIDATION_ERROR`, `DATABASE_ERROR`) — never hardcode error strings.
 - **Enum type handler**: All C# enums mapped to SQL string values via `DapperEnumTypeHandler<T>` — register any new enums in `Program.cs`.

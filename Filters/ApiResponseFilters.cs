@@ -6,6 +6,13 @@ using WanderlustApi.Models;
 namespace WanderlustApi.Filters
 {
     /// <summary>
+    /// Apply to a controller or action to bypass ApiResponseWrapperAttribute and return raw JSON.
+    /// Required for endpoints that must conform to external wire protocols (e.g. Omaha 4).
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
+    public sealed class SkipResponseWrapperAttribute : Attribute { }
+
+    /// <summary>
     /// Action filter that automatically handles validation errors and formats them consistently
     /// </summary>
     public class ValidationFilterAttribute : ActionFilterAttribute
@@ -58,6 +65,10 @@ namespace WanderlustApi.Filters
         {
             // Skip if there's an exception (handled by global exception middleware)
             if (context.Exception != null)
+                return;
+
+            // Skip for controllers/actions that opt out (e.g. Omaha protocol endpoints)
+            if (context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<SkipResponseWrapperAttribute>() != null)
                 return;
 
             // Skip if already wrapped or is a file result
