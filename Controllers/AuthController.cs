@@ -6,6 +6,9 @@ using WanderlustApi.Models;
 using WanderlustApi.Services;
 using System.Security.Claims;
 using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 
 namespace WanderlustApi.Controllers
 {
@@ -17,6 +20,7 @@ namespace WanderlustApi.Controllers
         private readonly ICodeExampleRepository _codeExampleRepository;
         private readonly IJwtService _jwtService;
         private readonly IPasswordService _passwordService;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<AuthController> _logger;
 
         public AuthController(
@@ -24,12 +28,14 @@ namespace WanderlustApi.Controllers
             ICodeExampleRepository codeExampleRepository,
             IJwtService jwtService,
             IPasswordService passwordService,
+            IHttpClientFactory httpClientFactory,
             ILogger<AuthController> logger)
         {
             _userRepository = userRepository;
             _codeExampleRepository = codeExampleRepository;
             _jwtService = jwtService;
             _passwordService = passwordService;
+            _httpClientFactory = httpClientFactory;
             _logger = logger;
         }
 
@@ -157,6 +163,165 @@ namespace WanderlustApi.Controllers
             return Ok(ApiResponse<AuthResponse>.SuccessResponse(
                 authResponse, 
                 "User logged in successfully"));
+        }
+
+        // Federated sign-in: the custom-browser fork already has its own
+        // working Google/Microsoft OAuth (GoogleAuthProvider/
+        // MicrosoftAuthProvider, used for cloud bookmark sync) -- this
+        // endpoint exchanges an access token from that existing flow for a
+        // wanderlust-api session, rather than wiring Chromium's native
+        // Gaia sign-in (which the fork otherwise de-googles). Auto-
+        // provisions a wanderlust-api user on first sign-in from a given
+        // email, matching Register's shape but with a random, unusable
+        // password (this account can only ever sign in via this endpoint).
+        [HttpPost("external-login")]
+        public async Task<ActionResult<ApiResponse<AuthResponse>>> ExternalLogin(ExternalLoginRequest request)
+        {
+            (string Email, string DisplayName)? identity = request.Provider.ToLowerInvariant() switch
+            {
+                "google" => await VerifyGoogleTokenAsync(request.AccessToken),
+                "microsoft" => await VerifyMicrosoftTokenAsync(request.AccessToken),
+                _ => null,
+            };
+
+            if (identity == null)
+            {
+                return BadRequest(ApiResponse.ErrorResponse(
+                    "External sign-in failed",
+                    new ApiError
+                    {
+                        Code = ApiErrorCodes.AUTHENTICATION_FAILED,
+                        Message = "Could not verify the provided access token"
+                    },
+                    HttpStatusCode.BadRequest));
+            }
+
+            var user = await _userRepository.GetByEmailAsync(identity.Value.Email);
+            if (user == null)
+            {
+                user = new User
+                {
+                    Username = await GenerateUniqueUsernameAsync(identity.Value.Email),
+                    Email = identity.Value.Email,
+                    DisplayName = string.IsNullOrWhiteSpace(identity.Value.DisplayName)
+                        ? identity.Value.Email
+                        : identity.Value.DisplayName,
+                    // Never used to sign in -- external-login is the only
+                    // path for this account. A verifiable password would
+                    // imply a credential that doesn't exist.
+                    PasswordHash = _passwordService.HashPassword(Guid.NewGuid().ToString("N")),
+                    Role = UserRole.Member,
+                    CreatedAt = DateTime.UtcNow,
+                    LastLoginAt = DateTime.UtcNow,
+                    IsActive = true,
+                    IsEmailVerified = true, // the provider already verified the email
+                };
+                await _userRepository.CreateAsync(user);
+                _logger.LogInformation("New user auto-provisioned via {Provider} sign-in: {Email}", request.Provider, identity.Value.Email);
+            }
+            else
+            {
+                user.LastLoginAt = DateTime.UtcNow;
+                await _userRepository.UpdateAsync(user);
+            }
+
+            var accessToken = _jwtService.GenerateAccessToken(user);
+
+            var authResponse = new AuthResponse
+            {
+                AccessToken = accessToken,
+                RefreshToken = user.RefreshToken ?? string.Empty,
+                ExpiresAt = _jwtService.GetTokenExpiration(accessToken),
+                User = MapToUserDto(user)
+            };
+
+            return Ok(ApiResponse<AuthResponse>.SuccessResponse(
+                authResponse,
+                "Signed in successfully"));
+        }
+
+        private async Task<(string Email, string DisplayName)?> VerifyGoogleTokenAsync(string accessToken)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                var request = new HttpRequestMessage(HttpMethod.Get, "https://www.googleapis.com/oauth2/v3/userinfo");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                var response = await client.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+                var info = await response.Content.ReadFromJsonAsync<GoogleUserInfo>();
+                if (info == null || string.IsNullOrWhiteSpace(info.Email))
+                {
+                    return null;
+                }
+                return (info.Email, info.Name ?? info.Email);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Google access token verification failed");
+                return null;
+            }
+        }
+
+        private async Task<(string Email, string DisplayName)?> VerifyMicrosoftTokenAsync(string accessToken)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient();
+                var request = new HttpRequestMessage(HttpMethod.Get, "https://graph.microsoft.com/v1.0/me");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                var response = await client.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+                var info = await response.Content.ReadFromJsonAsync<MicrosoftUserInfo>();
+                var email = info?.Mail ?? info?.UserPrincipalName;
+                if (info == null || string.IsNullOrWhiteSpace(email))
+                {
+                    return null;
+                }
+                return (email!, info.DisplayName ?? email!);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Microsoft access token verification failed");
+                return null;
+            }
+        }
+
+        private async Task<string> GenerateUniqueUsernameAsync(string email)
+        {
+            var baseName = email.Split('@')[0];
+            var candidate = baseName;
+            var suffix = 0;
+            while (await _userRepository.UsernameExistsAsync(candidate))
+            {
+                suffix++;
+                candidate = $"{baseName}{suffix}";
+            }
+            return candidate;
+        }
+
+        private class GoogleUserInfo
+        {
+            [JsonPropertyName("email")]
+            public string? Email { get; set; }
+            [JsonPropertyName("name")]
+            public string? Name { get; set; }
+        }
+
+        private class MicrosoftUserInfo
+        {
+            [JsonPropertyName("mail")]
+            public string? Mail { get; set; }
+            [JsonPropertyName("userPrincipalName")]
+            public string? UserPrincipalName { get; set; }
+            [JsonPropertyName("displayName")]
+            public string? DisplayName { get; set; }
         }
 
         [HttpGet("test-jwt")]

@@ -58,6 +58,19 @@ namespace WanderlustApi.DTOs
         public string RefreshToken { get; set; } = string.Empty;
     }
 
+    public class ExternalLoginRequest
+    {
+        // "google" or "microsoft" -- matches the sign-in the custom-browser
+        // fork's own GoogleAuthProvider/MicrosoftAuthProvider already
+        // performs. The access token is verified server-side against the
+        // provider's own userinfo/Graph endpoint below, never trusted as-is.
+        [Required]
+        public string Provider { get; set; } = string.Empty;
+
+        [Required]
+        public string AccessToken { get; set; } = string.Empty;
+    }
+
     public class ChangePasswordRequest
     {
         [Required]
