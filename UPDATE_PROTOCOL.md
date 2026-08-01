@@ -146,6 +146,50 @@ Soft-deletes a release (sets `IsActive = 0`). The update endpoint never returns 
 
 ---
 
+## What's New Admin API
+
+Deliberately **not** part of `BrowserRelease`/`api/releases` above — that
+entity is pure Omaha installer metadata (one row per platform/arch per
+version, no human-readable field at all). `chrome://whats-new` in the
+browser needs a title/body per logical release, not per installer, so
+this is a separate table/endpoint instead.
+
+### List active entries (anonymous)
+
+```
+GET /api/whatsnew?appId={A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+```
+
+No `Authorization` header required — a `chrome://` WebUI page has no
+login session with this API, and this data isn't sensitive. Returns all
+active `WhatsNewEntry` records for the given `appId`, most recent first.
+
+### Publish a new entry
+
+```
+POST /api/whatsnew
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "appId":   "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}",
+  "version": "1.7.32",
+  "title":   "Floating undocked sidebar",
+  "body":    "Right-click the sidebar and choose Undock to pop it into its own window."
+}
+```
+
+### Deactivate an entry
+
+```
+POST /api/whatsnew/{id}/deactivate
+Authorization: Bearer <token>
+```
+
+Same soft-delete/IONOS-no-PUT-DELETE convention as `/api/releases`.
+
+---
+
 ## Database
 
 Run `Migrations/add_browser_releases.sql` once against the SQL Server instance before deploying. The migration is idempotent (`IF NOT EXISTS`).
@@ -164,6 +208,8 @@ CreatedAt     DATETIME2      -- most recent active row wins
 ```
 
 A non-clustered index on `(AppId, Platform, Arch, IsActive, CreatedAt DESC)` covers the primary update lookup query.
+
+Run `Migrations/add_whats_new_entries.sql` (same idempotent `IF NOT EXISTS` pattern) for the separate `WhatsNewEntries` table backing the API above.
 
 ---
 
@@ -184,15 +230,21 @@ No code changes required — the `(appId, platform, arch)` lookup is fully data-
 Controllers/
   OmahaController.cs     POST /v4/update — anonymous, raw JSON, SkipResponseWrapper
   ReleasesController.cs  GET|POST /api/releases — JWT-protected admin CRUD
+  WhatsNewController.cs  GET /api/whatsnew (anonymous) | POST (JWT) — changelog entries
 Data/
   Entities/BrowserRelease.cs
+  Entities/WhatsNewEntry.cs
   Repositories/IBrowserReleaseRepository.cs
   Repositories/BrowserReleaseRepository.cs   (Dapper)
+  Repositories/IWhatsNewRepository.cs
+  Repositories/WhatsNewRepository.cs         (Dapper)
   Mock/MockBrowserReleaseRepository.cs       (DB-unavailable fallback)
+  Mock/MockWhatsNewRepository.cs             (DB-unavailable fallback)
 Filters/
   ApiResponseFilters.cs  SkipResponseWrapperAttribute — opt-out from the global wrapper
 Migrations/
   add_browser_releases.sql
+  add_whats_new_entries.sql
 Models/
   Omaha/OmahaRequest.cs
   Omaha/OmahaResponse.cs

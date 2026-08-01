@@ -36,11 +36,11 @@ Health check endpoints (no auth required):
 ## Directory Structure
 
 ```
-Controllers/        # HTTP endpoints (AuthController, CodeExamplesController, CommunityController, OmahaController, ReleasesController, etc.)
+Controllers/        # HTTP endpoints (AuthController, CodeExamplesController, CommunityController, OmahaController, ReleasesController, WhatsNewController, etc.)
 Services/           # Business logic (JwtService, PasswordService, UserService, RealTimeNotificationService)
 Data/
-├── Entities/       # DB entity classes (BrowserRelease, etc.)
-├── Repositories/   # Dapper-based data access (IUserRepository, ICodeExampleRepository, IBrowserReleaseRepository, etc.)
+├── Entities/       # DB entity classes (BrowserRelease, WhatsNewEntry, etc.)
+├── Repositories/   # Dapper-based data access (IUserRepository, ICodeExampleRepository, IBrowserReleaseRepository, IWhatsNewRepository, etc.)
 └── Mock/           # Mock repositories — returned if DB unavailable at startup
 Models/             # Domain entities (User, Article, CodeExample, CommunityPost, ApiResponse<T>)
 ├── Omaha/          # Omaha 4 protocol DTOs (OmahaRequest, OmahaResponse, OmahaManifest, OmahaPackage)
@@ -56,7 +56,7 @@ Migrations/         # Raw SQL migration scripts (not EF Core)
 
 - **Repository pattern**: All data access through `IXxxRepository` interfaces — enables the mock fallback.
 - **`ApiResponse<T>` wrapper**: Every endpoint returns `{ success, data, error, message, timestamp, requestId, statusCode }`. The `ApiResponseWrapperAttribute` filter applies this automatically. To return raw JSON (e.g. for external wire protocols), decorate the controller or action with `[SkipResponseWrapper]`.
-- **Omaha 4 update protocol**: `POST /v4/update` (anonymous) — serves browser installer metadata to `custom-omaha-client`. Admin releases managed via `GET/POST /api/releases`. See [`UPDATE_PROTOCOL.md`](UPDATE_PROTOCOL.md) for full documentation.
+- **Omaha 4 update protocol**: `POST /v4/update` (anonymous) — serves browser installer metadata to `custom-omaha-client`. Admin releases managed via `GET/POST /api/releases`. Changelog entries for `chrome://whats-new` (a separate concept from installer metadata — see below) via `GET /api/whatsnew` (anonymous read) / `POST` (JWT, publish). See [`UPDATE_PROTOCOL.md`](UPDATE_PROTOCOL.md) for full documentation of both.
 - **Mock fallback**: If the DB connection fails at startup, the API switches to `MockXxxRepository` implementations and continues running. Check `/api/health/database` to confirm DB status.
 - **Standard error codes**: Use the `ApiErrorCodes` class (e.g., `AUTHENTICATION_FAILED`, `VALIDATION_ERROR`, `DATABASE_ERROR`) — never hardcode error strings.
 - **Enum type handler**: All C# enums mapped to SQL string values via `DapperEnumTypeHandler<T>` — register any new enums in `Program.cs`.
