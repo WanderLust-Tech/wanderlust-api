@@ -79,6 +79,7 @@ The production host (IONOS Windows) imposes hard restrictions:
 2. **No environment variable access at runtime** — use `appsettings.Production.json` or `EmbeddedConfiguration.cs` as fallback. `GeneratedConfiguration.cs` is written at build time.
 3. **No Console logging in production** — Serilog file logging is also disabled per host restrictions. Use the `/health` endpoints to verify state.
 4. **OutOfProcess hosting model** — set in `web.config`; required for IONOS compatibility.
+5. **No native IIS static file serving** — `web.config`'s AspNetCoreModuleV2 handler mapping is `path="*"` with no exclusion, so IIS forwards *every* request (including static files) into the .NET process rather than serving them itself. Any static content (e.g. installer binaries under `/releases/`, see `UPDATE_PROTOCOL.md`) needs `app.UseStaticFiles()` wired up explicitly in `Program.cs` — dropping files into a folder on the server does nothing on its own.
 
 ## Configuration
 

@@ -1,0 +1,10 @@
+[
+  {
+    "title": "Short, punchy feature name",
+    "body": "One or two sentences, written for the end user, describing what changed and why they'd care."
+  },
+  {
+    "title": "Another entry for the same release",
+    "body": "Add as many entries as this version has user-facing highlights -- skip internal/housekeeping changes."
+  }
+]

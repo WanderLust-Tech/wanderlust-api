@@ -1,0 +1,18 @@
+[
+  {
+    "title": "Manage your web apps from one page",
+    "body": "chrome://apps now lists every web app you've installed — launch or uninstall them right from the grid, no digging through Settings required."
+  },
+  {
+    "title": "Send feedback in a couple clicks",
+    "body": "The new Feedback page sends your report straight to us along with the page you were on and your browser version — no account or sign-in needed."
+  },
+  {
+    "title": "Shared page notes are now account-secured",
+    "body": "Notes you share on a page are now tied to your signed-in Google or Microsoft account, so only people you've actually shared with can add or remove them."
+  },
+  {
+    "title": "Automatic cleanup for forgotten tabs",
+    "body": "Turn on auto-archive in Settings → Performance and background tabs you haven't touched in days get freed from memory automatically — they're still right there when you click back."
+  }
+]

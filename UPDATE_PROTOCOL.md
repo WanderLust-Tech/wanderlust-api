@@ -131,7 +131,7 @@ Content-Type: application/json
 }
 ```
 
-The `InstallerUrl` should be a stable CDN or storage link. The client downloads directly from this URL — the API does not proxy the file.
+`InstallerUrl` is stored as a plain string — the client downloads directly from whatever URL it points to; this API never proxies or reads the file's bytes through the update-check request itself. It can point to an external CDN/blob store, **or** this API's own self-hosted `/releases/` static route (see "Installer Hosting" below) — both work, see that section for the tradeoffs.
 
 ### Deactivate a release
 
@@ -143,6 +143,38 @@ Authorization: Bearer <token>
 Soft-deletes a release (sets `IsActive = 0`). The update endpoint never returns deactivated releases. Use this to roll back a bad build without deleting the record.
 
 > **IONOS note**: PUT and DELETE HTTP verbs are blocked by the host. All mutations use POST.
+
+---
+
+## Installer Hosting
+
+`InstallerUrl` just needs to resolve to a direct HTTPS download of the installer binary — this API doesn't care where. Two supported options:
+
+### Option A — external CDN / blob storage (originally documented default)
+
+Upload the installer to whatever CDN/blob store you use, and set `installerUrl` to that stable link (e.g. `https://cdn.example.com/releases/1.0.1.0/wanderlust-setup-1.0.1.0-win-x64.exe`). Best if you expect meaningful download volume — large binaries never flow through this API's own process.
+
+### Option B — self-hosted via this API's `/releases/` route
+
+`Program.cs` serves static files from a `releases` folder via `app.UseStaticFiles()`:
+
+```csharp
+var releasesDir = Path.Combine(AppContext.BaseDirectory, "releases");
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(releasesDir),
+    RequestPath = "/releases"
+});
+```
+
+This exists specifically because **IONOS's IIS config does not serve static files natively** — `web.config`'s `AspNetCoreModuleV2` handler mapping is `path="*"` with no exclusion, so every request (including static content) gets routed into the .NET process regardless. Without this middleware, dropping a file into a `releases/` folder on the server does nothing — it 404s no matter what's on disk, because nothing ever handles that route.
+
+To use this option:
+1. FTP the installer into a `releases/` folder that's a **direct sibling of `web.config`/`WanderlustApi.dll`** on the server (i.e. `AppContext.BaseDirectory/releases` — not nested elsewhere, not the repo's own `Migrations/`-style layout).
+2. Set `installerUrl` to `https://api.wander-lust.tech/releases/<installer-filename>.exe`.
+3. Redeploy the API build that includes the `UseStaticFiles()` middleware above — it isn't live until that's published, separately from just uploading the file.
+
+Fine for this project's current scale; if download volume grows, moving to Option A avoids routing large binary transfers through the managed ASP.NET Core pipeline.
 
 ---
 
@@ -217,7 +249,7 @@ Run `Migrations/add_whats_new_entries.sql` (same idempotent `IF NOT EXISTS` patt
 
 1. Build an installer for the target platform.
 2. Hash it: `sha256sum installer.bin` (or `CertUtil -hashfile installer.exe SHA256` on Windows).
-3. Upload to CDN / Azure Blob / wherever `InstallerUrl` points.
+3. Upload it per one of the two options in "Installer Hosting" above (CDN, or this API's own `/releases/` folder).
 4. `POST /api/releases` with `"platform": "linux"` (or `"mac"`) and the new fields.
 
 No code changes required — the `(appId, platform, arch)` lookup is fully data-driven.
@@ -254,11 +286,13 @@ Models/
 
 ## Client
 
-The native update client is [`custom-omaha-client`](https://github.com/eightpoint/custom-omaha-client). Its compile-time defaults match this server:
+The native update client is [`custom-omaha-client`](https://github.com/eightpoint/custom-omaha-client) (`src/BUILD.gn`'s `declare_args()`). Its compile-time defaults must match this server and the browser's own app GUID:
 
 ```
-Server URL:  https://update.wanderlustbrowser.com/v4/update
-App ID:      {A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+Server URL:  https://api.wander-lust.tech/v4/update
+App ID:      {8A69D345-D564-463c-AFF1-A69D9E530F96}
 ```
 
-The client binary is invoked as a subprocess by `custom-browser`'s auto-update system (`src/custom/chrome/browser/autoupdate/`).
+The App ID must match `custom_windows_app_guid` in `custom-browser/src/custom/custom_browser_config.gni` exactly — a mismatch here doesn't error, it silently produces `noupdate` regardless of what's in `BrowserReleases`, since the lookup is by `(appId, platform, arch)` and a wrong `appId` simply matches no row. (Do not use `custom_windows_google_update_app_guid` — that's a separate, currently-unused identifier reserved for real Google-Omaha-compatibility purposes, unrelated to this fork's own update mechanism.)
+
+`custom-browser`'s own `UpdateManager` (`src/custom/chrome/browser/autoupdate/update_manager.cc`) independently calls this same `/v4/update` endpoint directly (for the in-browser update-available badge), separately from the `custom-omaha-client` subprocess the installer/updater flow invokes — both must point at the same server URL and app ID.
