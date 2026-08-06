@@ -19,6 +19,12 @@ namespace WanderlustApi.Models.Omaha
         [JsonPropertyName("isMachine")]
         public bool IsMachine { get; set; }
 
+        // The omaha_client updater tool's own release version (distinct from
+        // the browser version reported per-app below) -- optional since
+        // older clients won't send it.
+        [JsonPropertyName("clientVersion")]
+        public string? ClientVersion { get; set; }
+
         [JsonPropertyName("os")]
         public OmahaOs Os { get; set; } = new();
 

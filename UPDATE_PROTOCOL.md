@@ -21,6 +21,7 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
     "protocol": "4.0",
     "sessionId": "{UUID}",
     "isMachine": false,
+    "clientVersion": "1.0.0.0",
     "os": {
       "platform": "win",
       "version": "10.0.26200",
@@ -45,6 +46,7 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
 | `os.arch` | `x64` \| `x86` \| `arm64` |
 | `apps[].appId` | Must match a registered app ID in `BrowserReleases` |
 | `apps[].version` | Four-part version string, e.g. `1.0.0.0` |
+| `clientVersion` | Optional. The `omaha_client` updater tool's own release version (not the browser's) — logged for observability, not used in update-decision logic. Older clients may omit it. |
 
 ### Response — update available
 

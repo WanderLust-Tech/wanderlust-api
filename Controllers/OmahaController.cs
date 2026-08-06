@@ -14,10 +14,12 @@ namespace WanderlustApi.Controllers
     public class OmahaController : ControllerBase
     {
         private readonly IBrowserReleaseRepository _releases;
+        private readonly ILogger<OmahaController> _logger;
 
-        public OmahaController(IBrowserReleaseRepository releases)
+        public OmahaController(IBrowserReleaseRepository releases, ILogger<OmahaController> logger)
         {
             _releases = releases;
+            _logger = logger;
         }
 
         [HttpPost("update")]
@@ -27,6 +29,12 @@ namespace WanderlustApi.Controllers
         {
             if (request?.Request?.Apps == null || request.Request.Apps.Count == 0)
                 return BadJsonResponse("Invalid request: no apps specified");
+
+            _logger.LogInformation(
+                "Omaha update check: clientVersion={ClientVersion} sessionId={SessionId} appCount={AppCount}",
+                request.Request.ClientVersion ?? "(unknown)",
+                request.Request.SessionId,
+                request.Request.Apps.Count);
 
             var os = request.Request.Os;
             var responseApps = new List<OmahaResponseApp>();
