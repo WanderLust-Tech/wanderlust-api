@@ -12,16 +12,17 @@ namespace WanderlustApi.Data.Repositories
             _connectionFactory = connectionFactory;
         }
 
-        public async Task<BrowserRelease?> GetLatestReleaseAsync(string appId, string platform, string arch)
+        public async Task<IReadOnlyList<BrowserRelease>> GetActiveReleasesAsync(string appId, string platform, string arch)
         {
             using var conn = await _connectionFactory.CreateConnectionAsync();
-            return await conn.QueryFirstOrDefaultAsync<BrowserRelease>(
-                @"SELECT TOP 1 Id, AppId, Version, Platform, Arch, InstallerName, InstallerUrl,
-                         HashSha256, SizeBytes, IsActive, CreatedAt
+            var rows = await conn.QueryAsync<BrowserRelease>(
+                @"SELECT Id, AppId, Version, Platform, Arch, InstallerName, InstallerUrl,
+                         HashSha256, SizeBytes, IsActive, CreatedAt, RolloutWeight, ExperimentName
                   FROM BrowserReleases
                   WHERE AppId = @AppId AND Platform = @Platform AND Arch = @Arch AND IsActive = 1
                   ORDER BY CreatedAt DESC",
                 new { AppId = appId, Platform = platform, Arch = arch });
+            return rows.AsList();
         }
 
         public async Task<IEnumerable<BrowserRelease>> GetAllReleasesAsync()
@@ -29,7 +30,7 @@ namespace WanderlustApi.Data.Repositories
             using var conn = await _connectionFactory.CreateConnectionAsync();
             return await conn.QueryAsync<BrowserRelease>(
                 @"SELECT Id, AppId, Version, Platform, Arch, InstallerName, InstallerUrl,
-                         HashSha256, SizeBytes, IsActive, CreatedAt
+                         HashSha256, SizeBytes, IsActive, CreatedAt, RolloutWeight, ExperimentName
                   FROM BrowserReleases
                   WHERE IsActive = 1
                   ORDER BY CreatedAt DESC");
@@ -40,10 +41,12 @@ namespace WanderlustApi.Data.Repositories
             using var conn = await _connectionFactory.CreateConnectionAsync();
             var id = await conn.ExecuteScalarAsync<int>(
                 @"INSERT INTO BrowserReleases
-                    (AppId, Version, Platform, Arch, InstallerName, InstallerUrl, HashSha256, SizeBytes, IsActive, CreatedAt)
+                    (AppId, Version, Platform, Arch, InstallerName, InstallerUrl, HashSha256, SizeBytes,
+                     RolloutWeight, ExperimentName, IsActive, CreatedAt)
                   OUTPUT INSERTED.Id
                   VALUES
-                    (@AppId, @Version, @Platform, @Arch, @InstallerName, @InstallerUrl, @HashSha256, @SizeBytes, 1, GETUTCDATE())",
+                    (@AppId, @Version, @Platform, @Arch, @InstallerName, @InstallerUrl, @HashSha256, @SizeBytes,
+                     @RolloutWeight, @ExperimentName, 1, GETUTCDATE())",
                 release);
             release.Id = id;
             release.CreatedAt = DateTime.UtcNow;

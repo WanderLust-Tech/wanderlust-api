@@ -5,8 +5,8 @@ namespace WanderlustApi.Data.Mock
 {
     public class MockBrowserReleaseRepository : IBrowserReleaseRepository
     {
-        public Task<BrowserRelease?> GetLatestReleaseAsync(string appId, string platform, string arch)
-            => Task.FromResult<BrowserRelease?>(null);
+        public Task<IReadOnlyList<BrowserRelease>> GetActiveReleasesAsync(string appId, string platform, string arch)
+            => Task.FromResult<IReadOnlyList<BrowserRelease>>(Array.Empty<BrowserRelease>());
 
         public Task<IEnumerable<BrowserRelease>> GetAllReleasesAsync()
             => Task.FromResult<IEnumerable<BrowserRelease>>(Array.Empty<BrowserRelease>());

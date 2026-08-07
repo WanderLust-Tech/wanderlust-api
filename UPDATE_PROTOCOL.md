@@ -22,6 +22,7 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
     "sessionId": "{UUID}",
     "isMachine": false,
     "clientVersion": "1.0.0.0",
+    "installId": "{UUID}",
     "os": {
       "platform": "win",
       "version": "10.0.26200",
@@ -45,8 +46,9 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
 | `os.platform` | `win` \| `linux` \| `mac` |
 | `os.arch` | `x64` \| `x86` \| `arm64` |
 | `apps[].appId` | Must match a registered app ID in `BrowserReleases` |
-| `apps[].version` | Four-part version string, e.g. `1.0.0.0` |
+| `apps[].version` | Four-part version string, e.g. `1.0.0.0`. `"0.0.0.0"` (or empty) is a special sentinel meaning "brand-new install, no prior version" — see "Version logic" below. |
 | `clientVersion` | Optional. The `omaha_client` updater tool's own release version (not the browser's) — logged for observability, not used in update-decision logic. Older clients may omit it. |
+| `installId` | Optional. A stable per-install GUID, generated once and persisted by the client (**not** `sessionId`, which regenerates every check). Used to deterministically bucket this install for staged rollouts/A-B experiments — see "Version logic" below. Clients that omit it only ever receive releases with `RolloutWeight=100`. |
 
 ### Response — update available
 
@@ -97,7 +99,41 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
 
 ### Version logic
 
-The server compares the client's `apps[].version` against the most recently created active release in `BrowserReleases` for the matching `(appId, platform, arch)` triple using `System.Version` four-part comparison. If the stored version is strictly greater than the client version, the response is `ok` with the installer manifest. Otherwise it is `noupdate`.
+`OmahaController` fetches **every** active release for the matching
+`(appId, platform, arch)` triple (`IBrowserReleaseRepository.GetActiveReleasesAsync`,
+newest first), then hands them to `IReleaseRolloutSelector` to pick exactly
+one — usually there's only one active row and this is a no-op, but multiple
+can coexist during a staged rollout or A/B experiment.
+
+**Selection (`ReleaseRolloutSelector`)** — a deterministic weighted
+waterfall, tried newest-first:
+1. If `installId` is missing, only releases with `RolloutWeight = 100` are
+   eligible (never opt an unbucketable client into a partial experiment).
+2. Compute `bucket = SHA256(installId + ":" + appId)[0..4] % 100` (0-99) —
+   **not** a randomized/process-local hash, so the same install always
+   lands in the same bucket across repeated checks.
+3. Walk candidates newest-first, accumulating `RolloutWeight`; return the
+   first whose cumulative range covers `bucket`.
+
+A single active row at the default `RolloutWeight=100` covers every bucket
+— today's "always get the newest active release" behavior is just the
+degenerate case of this algorithm, unchanged for anyone who never sets a
+custom weight.
+
+**Version comparison** — once a release is selected: if the client's
+`apps[].version` is the fresh-install sentinel (`"0.0.0.0"` or empty), the
+selected release is always returned as `ok` — there's nothing to compare
+against. Otherwise, `System.Version` four-part comparison applies as
+before: `ok` if the selected release's version is strictly greater than
+the client's, `noupdate` otherwise.
+
+**Example** — stage v1.1.0.0 to 20% of installs, leaving v1.0.0.0 (already
+active at the default weight) to cover the rest:
+
+| Version | RolloutWeight | Result |
+|---|---|---|
+| 1.1.0.0 | 20 | buckets 0-19 |
+| 1.0.0.0 | 100 | buckets 20-99 (and all clients with no `installId`) |
 
 ---
 
@@ -129,9 +165,19 @@ Content-Type: application/json
   "installerName": "wanderlust-setup-1.0.1.0-win-x64.exe",
   "installerUrl":  "https://cdn.wanderlustbrowser.com/releases/1.0.1.0/wanderlust-setup-1.0.1.0-win-x64.exe",
   "hashSha256":    "a1b2c3d4e5f6...",
-  "sizeBytes":     98304000
+  "sizeBytes":     98304000,
+  "rolloutWeight": 100,
+  "experimentName": null
 }
 ```
+
+`rolloutWeight` and `experimentName` are both optional — omit them (or
+pass `100`/`null`) for a normal release that should immediately replace
+whatever was previously active. Set `rolloutWeight` lower to stage a
+gradual rollout or run an A/B experiment alongside other still-active
+releases for the same `appId`/`platform`/`arch` (see "Version logic"
+above); `experimentName` is a free-text label for your own tracking, not
+read by the selection logic.
 
 `InstallerUrl` is stored as a plain string — the client downloads directly from whatever URL it points to; this API never proxies or reads the file's bytes through the update-check request itself. It can point to an external CDN/blob store, **or** this API's own self-hosted `/releases/` static route (see "Installer Hosting" below) — both work, see that section for the tradeoffs.
 
@@ -226,19 +272,21 @@ Same soft-delete/IONOS-no-PUT-DELETE convention as `/api/releases`.
 
 ## Database
 
-Run `Migrations/add_browser_releases.sql` once against the SQL Server instance before deploying. The migration is idempotent (`IF NOT EXISTS`).
+Run `Migrations/add_browser_releases.sql` once against the SQL Server instance before deploying, then `Migrations/add_release_rollout.sql` for the rollout/A-B columns. Both are idempotent (`IF NOT EXISTS`).
 
 ```sql
 -- key columns
-AppId         NVARCHAR(64)   -- app GUID from config.h
-Version       NVARCHAR(32)   -- four-part, e.g. 1.0.1.0
-Platform      NVARCHAR(16)   -- win | linux | mac
-Arch          NVARCHAR(8)    -- x64 | x86 | arm64
-InstallerUrl  NVARCHAR(1024) -- direct HTTPS download link
-HashSha256    NVARCHAR(128)  -- hex-encoded SHA-256
-SizeBytes     BIGINT
-IsActive      BIT DEFAULT 1  -- soft-delete flag
-CreatedAt     DATETIME2      -- most recent active row wins
+AppId          NVARCHAR(64)   -- app GUID from config.h
+Version        NVARCHAR(32)   -- four-part, e.g. 1.0.1.0
+Platform       NVARCHAR(16)   -- win | linux | mac
+Arch           NVARCHAR(8)    -- x64 | x86 | arm64
+InstallerUrl   NVARCHAR(1024) -- direct HTTPS download link
+HashSha256     NVARCHAR(128)  -- hex-encoded SHA-256
+SizeBytes      BIGINT
+IsActive       BIT DEFAULT 1     -- soft-delete flag
+CreatedAt      DATETIME2         -- selection order (newest first)
+RolloutWeight  INT DEFAULT 100   -- 0-100; see "Version logic"
+ExperimentName NVARCHAR(128)     -- nullable, admin/reporting label only
 ```
 
 A non-clustered index on `(AppId, Platform, Arch, IsActive, CreatedAt DESC)` covers the primary update lookup query.
@@ -274,10 +322,13 @@ Data/
   Repositories/WhatsNewRepository.cs         (Dapper)
   Mock/MockBrowserReleaseRepository.cs       (DB-unavailable fallback)
   Mock/MockWhatsNewRepository.cs             (DB-unavailable fallback)
+Services/
+  ReleaseRolloutSelector.cs   Deterministic weighted waterfall bucketing (rollout/A-B)
 Filters/
   ApiResponseFilters.cs  SkipResponseWrapperAttribute — opt-out from the global wrapper
 Migrations/
   add_browser_releases.sql
+  add_release_rollout.sql
   add_whats_new_entries.sql
 Models/
   Omaha/OmahaRequest.cs

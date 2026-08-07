@@ -36,6 +36,8 @@ namespace WanderlustApi.Controllers
                 InstallerUrl  = req.InstallerUrl,
                 HashSha256    = req.HashSha256,
                 SizeBytes     = req.SizeBytes,
+                RolloutWeight = req.RolloutWeight,
+                ExperimentName = req.ExperimentName,
             };
 
             var created = await _releases.CreateReleaseAsync(release);
@@ -60,6 +62,11 @@ namespace WanderlustApi.Controllers
         string InstallerName,
         string InstallerUrl,
         string HashSha256,
-        long   SizeBytes
+        long   SizeBytes,
+        // 0-100. Omit (or 100) for normal releases -- every client gets it.
+        // Set lower to stage a rollout or run an A/B experiment alongside
+        // other active releases for the same AppId/Platform/Arch.
+        int    RolloutWeight = 100,
+        string? ExperimentName = null
     );
 }

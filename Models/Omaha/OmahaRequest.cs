@@ -25,6 +25,14 @@ namespace WanderlustApi.Models.Omaha
         [JsonPropertyName("clientVersion")]
         public string? ClientVersion { get; set; }
 
+        // Stable per-install GUID (NOT the same as sessionId, which
+        // regenerates every check) used to deterministically bucket this
+        // install for staged rollouts/A-B experiments -- see
+        // IReleaseRolloutSelector. Optional; older clients that don't send
+        // it only ever get releases with RolloutWeight=100.
+        [JsonPropertyName("installId")]
+        public string? InstallId { get; set; }
+
         [JsonPropertyName("os")]
         public OmahaOs Os { get; set; } = new();
 

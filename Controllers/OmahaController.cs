@@ -4,6 +4,7 @@ using System.Text.Json;
 using WanderlustApi.Data.Repositories;
 using WanderlustApi.Filters;
 using WanderlustApi.Models.Omaha;
+using WanderlustApi.Services;
 
 namespace WanderlustApi.Controllers
 {
@@ -13,12 +14,22 @@ namespace WanderlustApi.Controllers
     [SkipResponseWrapper]
     public class OmahaController : ControllerBase
     {
+        // Sent by a brand-new install with no prior version -- there's
+        // nothing to compare against, so it always gets whatever the
+        // rollout selector picked, skipping the version-comparison guard.
+        private const string FreshInstallVersionSentinel = "0.0.0.0";
+
         private readonly IBrowserReleaseRepository _releases;
+        private readonly IReleaseRolloutSelector _selector;
         private readonly ILogger<OmahaController> _logger;
 
-        public OmahaController(IBrowserReleaseRepository releases, ILogger<OmahaController> logger)
+        public OmahaController(
+            IBrowserReleaseRepository releases,
+            IReleaseRolloutSelector selector,
+            ILogger<OmahaController> logger)
         {
             _releases = releases;
+            _selector = selector;
             _logger = logger;
         }
 
@@ -31,8 +42,9 @@ namespace WanderlustApi.Controllers
                 return BadJsonResponse("Invalid request: no apps specified");
 
             _logger.LogInformation(
-                "Omaha update check: clientVersion={ClientVersion} sessionId={SessionId} appCount={AppCount}",
+                "Omaha update check: clientVersion={ClientVersion} installId={InstallId} sessionId={SessionId} appCount={AppCount}",
                 request.Request.ClientVersion ?? "(unknown)",
+                request.Request.InstallId ?? "(none)",
                 request.Request.SessionId,
                 request.Request.Apps.Count);
 
@@ -49,29 +61,36 @@ namespace WanderlustApi.Controllers
 
                 try
                 {
-                    var latest = await _releases.GetLatestReleaseAsync(
+                    var candidates = await _releases.GetActiveReleasesAsync(
                         app.AppId,
                         os.Platform,
                         os.Arch);
 
-                    if (latest == null)
+                    var selected = _selector.SelectRelease(candidates, app.AppId, request.Request.InstallId);
+                    if (selected == null)
                     {
                         responseApps.Add(NoUpdateApp());
                         continue;
                     }
 
-                    // Parse both versions; fall back to no-update if parsing fails
-                    if (!System.Version.TryParse(latest.Version, out var latestVer) ||
-                        !System.Version.TryParse(app.Version, out var clientVer))
-                    {
-                        responseApps.Add(NoUpdateApp());
-                        continue;
-                    }
+                    bool isFreshInstall = string.IsNullOrWhiteSpace(app.Version) ||
+                                          app.Version == FreshInstallVersionSentinel;
 
-                    if (latestVer <= clientVer)
+                    if (!isFreshInstall)
                     {
-                        responseApps.Add(NoUpdateApp());
-                        continue;
+                        // Parse both versions; fall back to no-update if parsing fails
+                        if (!System.Version.TryParse(selected.Version, out var selectedVer) ||
+                            !System.Version.TryParse(app.Version, out var clientVer))
+                        {
+                            responseApps.Add(NoUpdateApp());
+                            continue;
+                        }
+
+                        if (selectedVer <= clientVer)
+                        {
+                            responseApps.Add(NoUpdateApp());
+                            continue;
+                        }
                     }
 
                     responseApps.Add(new OmahaResponseApp
@@ -81,15 +100,15 @@ namespace WanderlustApi.Controllers
                             Status = "ok",
                             Manifest = new OmahaManifest
                             {
-                                Version = latest.Version,
+                                Version = selected.Version,
                                 Packages = new List<OmahaPackage>
                                 {
                                     new OmahaPackage
                                     {
-                                        Name     = latest.InstallerName,
-                                        HashSha256 = latest.HashSha256,
-                                        Url      = latest.InstallerUrl,
-                                        Size     = latest.SizeBytes,
+                                        Name     = selected.InstallerName,
+                                        HashSha256 = selected.HashSha256,
+                                        Url      = selected.InstallerUrl,
+                                        Size     = selected.SizeBytes,
                                     }
                                 }
                             }

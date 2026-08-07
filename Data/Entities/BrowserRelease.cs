@@ -13,5 +13,13 @@ namespace WanderlustApi.Data.Entities
         public long SizeBytes { get; set; }
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; }
+        // 0-100. Default 100 keeps today's "always wins" behavior. Multiple
+        // active rows for the same (AppId, Platform, Arch) can carry a lower
+        // weight to run a staged rollout or an A/B experiment -- see
+        // IReleaseRolloutSelector.
+        public int RolloutWeight { get; set; } = 100;
+        // Free-text label for admin/reporting use only -- not read by the
+        // rollout selection logic itself.
+        public string? ExperimentName { get; set; }
     }
 }
