@@ -27,12 +27,16 @@ namespace WanderlustApi.Data.Repositories
 
         public async Task<IEnumerable<BrowserRelease>> GetAllReleasesAsync()
         {
+            // No IsActive filter here on purpose -- this backs the admin
+            // management UI, which needs to see (and be able to re-enable)
+            // deactivated releases too. Real update-check traffic goes
+            // through GetActiveReleasesAsync above instead, which still
+            // filters correctly.
             using var conn = await _connectionFactory.CreateConnectionAsync();
             return await conn.QueryAsync<BrowserRelease>(
                 @"SELECT Id, AppId, Version, Platform, Arch, InstallerName, InstallerUrl,
                          HashSha256, SizeBytes, IsActive, CreatedAt, RolloutWeight, ExperimentName
                   FROM BrowserReleases
-                  WHERE IsActive = 1
                   ORDER BY CreatedAt DESC");
         }
 
@@ -58,6 +62,15 @@ namespace WanderlustApi.Data.Repositories
             using var conn = await _connectionFactory.CreateConnectionAsync();
             var rows = await conn.ExecuteAsync(
                 "UPDATE BrowserReleases SET IsActive = 0 WHERE Id = @Id",
+                new { Id = id });
+            return rows > 0;
+        }
+
+        public async Task<bool> ActivateReleaseAsync(int id)
+        {
+            using var conn = await _connectionFactory.CreateConnectionAsync();
+            var rows = await conn.ExecuteAsync(
+                "UPDATE BrowserReleases SET IsActive = 1 WHERE Id = @Id",
                 new { Id = id });
             return rows > 0;
         }

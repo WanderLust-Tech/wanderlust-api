@@ -20,5 +20,8 @@ namespace WanderlustApi.Data.Mock
 
         public Task<bool> DeactivateReleaseAsync(int id)
             => Task.FromResult(false);
+
+        public Task<bool> ActivateReleaseAsync(int id)
+            => Task.FromResult(false);
     }
 }

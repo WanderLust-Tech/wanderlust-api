@@ -52,6 +52,14 @@ namespace WanderlustApi.Controllers
             if (!ok) return NotFound();
             return NoContent();
         }
+
+        [HttpPost("{id}/activate")]
+        public async Task<IActionResult> Activate(int id)
+        {
+            var ok = await _releases.ActivateReleaseAsync(id);
+            if (!ok) return NotFound();
+            return NoContent();
+        }
     }
 
     public record CreateReleaseRequest(
