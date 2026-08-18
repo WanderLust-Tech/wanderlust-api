@@ -1,4 +1,4 @@
--- Seed: import of qa-testing-checklist.md's current checklist items
+﻿-- Seed: import of qa-testing-checklist.md's current checklist items
 -- (generated 605 rows, 9 categories -- see gen_qa_seed.py used to
 -- produce this file from the doc's ## / ### / - [ ] structure, including
 -- Markdown soft-wrapped continuation lines).
