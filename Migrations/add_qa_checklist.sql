@@ -27,7 +27,7 @@ BEGIN
         Id          INT            IDENTITY(1,1) PRIMARY KEY,
         Category    NVARCHAR(64)   NOT NULL,           -- "## " header, e.g. "Browser UI"
         FeatureName NVARCHAR(128)  NOT NULL,           -- "### " header, e.g. "Vertical Tabs"
-        ItemText    NVARCHAR(1024) NOT NULL,           -- the checklist line itself
+        ItemText    NVARCHAR(2000) NOT NULL,           -- the checklist line itself
         SortOrder   INT            NOT NULL,           -- preserves doc order
         IsActive    BIT            NOT NULL DEFAULT 1, -- soft-retire without renumbering
         CreatedAt   DATETIME2      NOT NULL DEFAULT GETUTCDATE()
@@ -36,6 +36,12 @@ BEGIN
     CREATE NONCLUSTERED INDEX IX_QaChecklistTemplateItems_Sort
         ON QaChecklistTemplateItems (IsActive, SortOrder);
 END
+GO
+
+-- Widen ItemText for installs that already ran this migration when the
+-- column was NVARCHAR(1024) -- some checklist items exceed that length.
+-- Safe/idempotent to re-run (no-op once already 2000).
+ALTER TABLE QaChecklistTemplateItems ALTER COLUMN ItemText NVARCHAR(2000) NOT NULL;
 GO
 
 IF NOT EXISTS (
