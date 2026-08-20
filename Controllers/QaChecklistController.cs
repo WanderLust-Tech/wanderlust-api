@@ -56,6 +56,14 @@ namespace WanderlustApi.Controllers
             return NoContent();
         }
 
+        [HttpPost("runs/{id}/delete")]
+        public async Task<IActionResult> DeleteRun(int id)
+        {
+            var ok = await _checklist.DeleteRunAsync(id);
+            if (!ok) return NotFound();
+            return NoContent();
+        }
+
         private string GetCurrentDisplayName()
         {
             return User.FindFirst("DisplayName")?.Value

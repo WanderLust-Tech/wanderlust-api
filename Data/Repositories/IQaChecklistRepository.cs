@@ -22,5 +22,12 @@ namespace WanderlustApi.Data.Repositories
         Task<QaChecklistRun> CreateRunAsync(string appId, string version, string? createdBy);
 
         Task<bool> SetItemStatusAsync(int runId, int runItemId, bool isComplete, string? completedBy, string? notes);
+
+        // Hard delete -- removes the run and all of its QaChecklistRunItems
+        // rows (no FK cascade is defined, so run items must be deleted
+        // first). Unlike template items' soft-delete (IsActive), a run has
+        // no ongoing reason to be preserved once removed -- it's just a
+        // completed/abandoned checklist pass, not shared reference data.
+        Task<bool> DeleteRunAsync(int runId);
     }
 }

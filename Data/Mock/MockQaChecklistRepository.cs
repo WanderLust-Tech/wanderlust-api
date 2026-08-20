@@ -31,5 +31,8 @@ namespace WanderlustApi.Data.Mock
 
         public Task<bool> SetItemStatusAsync(int runId, int runItemId, bool isComplete, string? completedBy, string? notes)
             => Task.FromResult(false);
+
+        public Task<bool> DeleteRunAsync(int runId)
+            => Task.FromResult(false);
     }
 }

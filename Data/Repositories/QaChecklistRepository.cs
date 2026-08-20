@@ -105,5 +105,25 @@ namespace WanderlustApi.Data.Repositories
                 new { RunId = runId, RunItemId = runItemId, IsComplete = isComplete, CompletedBy = completedBy, Notes = notes });
             return rows > 0;
         }
+
+        public async Task<bool> DeleteRunAsync(int runId)
+        {
+            using var conn = await _connectionFactory.CreateConnectionAsync();
+            using var transaction = conn.BeginTransaction();
+
+            // No FK cascade is defined between QaChecklistRunItems and
+            // QaChecklistRuns -- child rows must go first or the second
+            // delete violates the constraint.
+            await conn.ExecuteAsync(
+                @"DELETE FROM QaChecklistRunItems WHERE RunId = @RunId",
+                new { RunId = runId }, transaction);
+
+            var rows = await conn.ExecuteAsync(
+                @"DELETE FROM QaChecklistRuns WHERE Id = @RunId",
+                new { RunId = runId }, transaction);
+
+            transaction.Commit();
+            return rows > 0;
+        }
     }
 }
