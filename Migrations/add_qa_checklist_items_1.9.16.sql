@@ -1,16 +1,19 @@
 -- Adds QA checklist items for browser v1.9.16: a speed-dial style New Tab
 -- Page experience ported from the third-party Toolbar Dial browser
 -- extension -- a new "Dial" NTP layout flavor, plus a dial-style tile
--- option for the existing top-sites grid (Full/Hub layouts).
+-- option for the existing top-sites grid (Full/Hub layouts). Also covers
+-- a same-version follow-up fix for the dial tiles overlapping in a fixed
+-- 5-column grid.
 --
 -- See dial-tiles.md and changelog.md (1.9.16 entry), wanderlust-knowledgebase
 -- repo, for the full write-up.
 --
 -- Run after add_qa_checklist_items_1.9.15.sql. Idempotent: each block below
--- skips independently -- the "NTP Layout Switching" block on an existing
--- "As of v1.9.16:" item (that FeatureName already has older rows from the
--- original seed), the two brand-new feature blocks on their FeatureName.
--- Appends after the current max SortOrder in each case.
+-- skips independently -- the "NTP Layout Switching" block and the tile-
+-- overlap fix block each gate on an existing "As of v1.9.16:" ItemText
+-- prefix for their (already-seeded) FeatureName, the two brand-new feature
+-- blocks gate on their FeatureName alone. Appends after the current max
+-- SortOrder in each case.
 
 IF NOT EXISTS (
     SELECT 1 FROM QaChecklistTemplateItems
@@ -56,5 +59,18 @@ BEGIN
     (N'New Tab Page', N'Dial Layout', N'Click the back button — **Expected:** Returns to the previous grid level (root, or the parent folder).', @baseSort + 3),
     (N'New Tab Page', N'Dial Layout', N'Click a bookmark tile — **Expected:** Navigates to that bookmark''s URL.', @baseSort + 4),
     (N'New Tab Page', N'Dial Layout', N'Add/rename/remove a bookmark or folder in the browser''s Bookmark Manager, then revisit the Dial layout — **Expected:** Grid reflects the change (live-updated, not stale).', @baseSort + 5);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM QaChecklistTemplateItems
+    WHERE FeatureName = N'Dial-Style Top Sites Tiles' AND ItemText LIKE N'As of v1.9.16:%'
+)
+BEGIN
+    DECLARE @baseSort INT = (SELECT ISNULL(MAX(SortOrder), 0) FROM QaChecklistTemplateItems);
+
+    INSERT INTO QaChecklistTemplateItems (Category, FeatureName, ItemText, SortOrder)
+    VALUES
+    (N'New Tab Page', N'Dial-Style Top Sites Tiles', N'As of v1.9.16: with "Dial tiles" selected and enough tiles to fill multiple rows, check a narrower browser window as well as a wide one — **Expected:** Tiles are laid out in a grid sized to their actual width, with no visual overlap between adjacent tiles at any width (previously a fixed 5-column grid caused tiles to overlap once a column was narrower than a tile).', @baseSort + 1);
 END
 GO
