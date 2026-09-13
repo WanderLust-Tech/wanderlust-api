@@ -2,18 +2,21 @@
 -- Page experience ported from the third-party Toolbar Dial browser
 -- extension -- a new "Dial" NTP layout flavor, plus a dial-style tile
 -- option for the existing top-sites grid (Full/Hub layouts). Also covers
--- a same-version follow-up fix for the dial tiles overlapping in a fixed
--- 5-column grid.
+-- same-version follow-ups: a fix for the dial tiles overlapping in a
+-- fixed 5-column grid, a content-section reorder, and the wallpaper
+-- customization consolidation (shared useWallpaper hook + WallpaperPicker
+-- component, Bing/Unsplash support in every layout, a new Custom
+-- uploaded-image source).
 --
--- See dial-tiles.md and changelog.md (1.9.16 entry), wanderlust-knowledgebase
--- repo, for the full write-up.
+-- See dial-tiles.md, wallpaper-customization.md, and changelog.md (1.9.16
+-- entry), wanderlust-knowledgebase repo, for the full write-ups.
 --
 -- Run after add_qa_checklist_items_1.9.15.sql. Idempotent: each block below
--- skips independently -- the "NTP Layout Switching" block and the tile-
--- overlap fix block each gate on an existing "As of v1.9.16:" ItemText
--- prefix for their (already-seeded) FeatureName, the two brand-new feature
--- blocks gate on their FeatureName alone. Appends after the current max
--- SortOrder in each case.
+-- skips independently -- blocks touching an already-seeded FeatureName gate
+-- on a distinguishing ItemText substring specific to that row (a bare
+-- "As of v1.9.16:%" prefix isn't specific enough once a FeatureName has more
+-- than one v1.9.16 addition), the brand-new feature blocks gate on their
+-- FeatureName alone. Appends after the current max SortOrder in each case.
 
 IF NOT EXISTS (
     SELECT 1 FROM QaChecklistTemplateItems
@@ -72,5 +75,35 @@ BEGIN
     INSERT INTO QaChecklistTemplateItems (Category, FeatureName, ItemText, SortOrder)
     VALUES
     (N'New Tab Page', N'Dial-Style Top Sites Tiles', N'As of v1.9.16: with "Dial tiles" selected and enough tiles to fill multiple rows, check a narrower browser window as well as a wide one — **Expected:** Tiles are laid out in a grid sized to their actual width, with no visual overlap between adjacent tiles at any width (previously a fixed 5-column grid caused tiles to overlap once a column was narrower than a tile).', @baseSort + 1);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM QaChecklistTemplateItems
+    WHERE FeatureName = N'Dial-Style Top Sites Tiles' AND ItemText LIKE N'%directly above the static Wanderlust Pages tiles%'
+)
+BEGIN
+    DECLARE @baseSort INT = (SELECT ISNULL(MAX(SortOrder), 0) FROM QaChecklistTemplateItems);
+
+    INSERT INTO QaChecklistTemplateItems (Category, FeatureName, ItemText, SortOrder)
+    VALUES
+    (N'New Tab Page', N'Dial-Style Top Sites Tiles', N'As of v1.9.16: on a fresh profile (or with default settings restored), enable "Top sites (dial)" in Full layout — **Expected:** The dial top-sites section appears directly above the static Wanderlust Pages tiles by default, not below them.', @baseSort + 1);
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM QaChecklistTemplateItems
+    WHERE FeatureName = N'Wallpaper Customization' AND ItemText LIKE N'As of v1.9.16:%'
+)
+BEGIN
+    DECLARE @baseSort INT = (SELECT ISNULL(MAX(SortOrder), 0) FROM QaChecklistTemplateItems);
+
+    INSERT INTO QaChecklistTemplateItems (Category, FeatureName, ItemText, SortOrder)
+    VALUES
+    (N'New Tab Page', N'Wallpaper Customization', N'As of v1.9.16: switch to Focus, Glass, Hub, or Dial layout and set the wallpaper source to Bing or Unsplash from NTP Settings — **Expected:** The layout''s background actually shows a Bing/Unsplash photo (previously these layouts silently ignored anything but the Colour source and always fell back to a static random image).', @baseSort + 1),
+    (N'New Tab Page', N'Wallpaper Customization', N'As of v1.9.16: switch to Full layout and adjust the blur/brightness sliders — **Expected:** The Full layout''s background responds to blur/brightness for the first time (previously unsupported there).', @baseSort + 2),
+    (N'New Tab Page', N'Wallpaper Customization', N'As of v1.9.16: in the Wallpaper layout, open its own gear-icon settings panel and switch the source to "Custom" — **Expected:** An image upload control appears; after picking an image file, it becomes the background immediately and persists after reloading that NTP tab.', @baseSort + 3),
+    (N'New Tab Page', N'Wallpaper Customization', N'As of v1.9.16: with a Custom image set in the Wallpaper layout, open the NTP Settings sidebar — **Expected:** No "Custom" option appears there (it''s only settable from the Wallpaper layout''s own picker); the other four sources still work normally from the sidebar.', @baseSort + 4),
+    (N'New Tab Page', N'Wallpaper Customization', N'As of v1.9.16: open the NTP Settings sidebar''s wallpaper picker on each layout that shows one — **Expected:** Source buttons, topic chips, color input, and blur/brightness sliders look and behave the same as before (now backed by a shared component internally; no visual or functional regression expected).', @baseSort + 5);
 END
 GO
