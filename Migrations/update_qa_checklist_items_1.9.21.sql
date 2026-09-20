@@ -10,13 +10,26 @@
 -- wanderlust-knowledgebase repo.
 --
 -- Run after add_qa_checklist_items_1.9.19_to_1.9.20.sql. Idempotent: the
--- DELETE only removes rows still matching the old (fictional) text -- a
--- no-op on a second run -- and the INSERT block is gated on an "As of
--- v1.9.21:" item already existing for this FeatureName.
-
-DELETE FROM QaChecklistTemplateItems
+-- UPDATE only soft-retires rows still matching the old (fictional) text
+-- and still IsActive -- a no-op on a second run -- and the INSERT block
+-- is gated on an "As of v1.9.21:" item already existing for this
+-- FeatureName.
+--
+-- Soft-retire (IsActive = 0) instead of DELETE: QaChecklistTemplateItems
+-- has no ON DELETE behavior configured on the FK from QaChecklistRunItems
+-- (default NO ACTION), and QaChecklistRunItems doesn't snapshot the item
+-- text -- it's joined live at read time. A hard DELETE fails outright
+-- (FK__QaCheckli__Templ__36470DEF) the moment any QA run has already
+-- exercised one of these six items, and even if the FK were loosened,
+-- historical runs would silently lose that item's text rather than just
+-- being orphaned. IsActive is exactly the column the schema already
+-- provides for this ("soft-retire without renumbering") and is what
+-- GetTemplateItemsAsync/CreateRunAsync already filter on.
+UPDATE QaChecklistTemplateItems
+SET IsActive = 0
 WHERE Category = N'Content & Reading'
   AND FeatureName = N'Reader Mode Integration'
+  AND IsActive = 1
   AND ItemText IN (
     N'Navigate to a clearly article-style page (news article, blog post) - **Expected:** Since auto-detect is off by default, no automatic prompt appears; manually invoke the reader-mode command/context-menu item to check availability.',
     N'Right-click on the article page and select **"Enter Reader Mode"** (or trigger command 35083) - **Expected:** Brief "Distilling" state, then content is replaced with the clean reader layout (centered column, serif font, white content card).',
