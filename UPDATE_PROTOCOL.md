@@ -185,6 +185,7 @@ Content-Type: application/json
   "installerUrl":  "https://cdn.wanderlustbrowser.com/releases/1.0.1.0/wanderlust-setup-1.0.1.0-win-x64.exe",
   "hashSha256":    "a1b2c3d4e5f6...",
   "sizeBytes":     98304000,
+  "signature":     "4f48c49ebe6c4c23:1AzWj6Qg+QJR2AWxwj7ggDsfs3qSmf/EOEO4ZExhcJFRC4blwDS4y/J1WtFFiPJglFIuuGgTpxJFOtihpBUskQ==",
   "rolloutWeight": 100,
   "experimentName": null
 }
@@ -213,6 +214,7 @@ read by the selection logic.
 | `sizeBytes` | 1 … 2 GiB |
 | `rolloutWeight` | 0 … 100 |
 | `experimentName` | at most 100 characters |
+| `signature` | **required** (`Releases:RequireSignature`, default true): `<16 hex key id>:<base64 of 64 bytes>` made by `scripts/release-signing/ReleaseSigner.cs`. If `Releases:SigningPublicKeys` (the same public key(s) built into the client) is configured it is also **verified** here, so a wrong key or a signature over different fields is rejected at publish time |
 
 Every publish, activate and deactivate is written to the application log at *Warning* level with the acting user (name and id), e.g. `Release published by admin (id 1): id 44, app {…}, version 1.11.15.0, win/x64, weight 100, url …`. There is no "published by" database column yet.
 
@@ -226,6 +228,55 @@ Authorization: Bearer <admin token>
 Soft-deletes a release (sets `IsActive = 0`). The update endpoint never returns deactivated releases. Use this to roll back a bad build without deleting the record.
 
 > **IONOS note**: PUT and DELETE HTTP verbs are blocked by the host. All mutations use POST.
+
+---
+
+## Release signing
+
+**Why.** The updater runs whatever installer the update server points it at, as SYSTEM for a machine-wide install. The server, its database and its admin accounts must not be able to ship code on their own, so the client verifies a signature the server cannot forge: ECDSA P-256, made **offline** with a private key that never goes near the server, over exactly the fields that decide what the client will run. The client embeds the matching **public** key(s) at build time and refuses any release it cannot verify. Without it, anyone who could publish a release (or edit the database) could run code on every install; the admin-role fix closed one door to that, signing makes the others useless.
+
+**Wire format** (keep identical in `custom-omaha-client/src/signature_verifier.cc`, `scripts/release-signing/ReleaseSigner.cs` and `Services/ReleaseSignature.cs`):
+
+```
+message   = UTF-8, one line each, every line ending "\n":
+              wanderlust-update-v1
+              <appId, lower-case, with braces>
+              <platform: win | linux | mac>
+              <arch: x64 | x86 | arm64>
+              <version: four decimal integers joined by '.', e.g. 1.11.15.0>
+              <installer SHA-256, lower-case hex>
+              <installer size in bytes, decimal>
+signature = ECDSA P-256 over SHA-256(message), 64 bytes r||s (IEEE P1363)
+public key= 64 bytes X||Y (big-endian), base64
+key id    = first 8 bytes of SHA-256(public key bytes), 16 lower-case hex chars
+stored in BrowserReleases.Signature and served as  "<key id>:<base64 signature>"
+```
+
+It is served inside the manifest package, next to the hash it protects:
+
+```json
+"packages": [{ "name": "...", "hash_sha256": "...", "url": "...", "size": 98304000,
+               "signature": "4f48c49ebe6c4c23:1AzW...==" }]
+```
+
+The client's own app id, platform and architecture go into the message, not the server's, so a validly signed release for another app/OS/arch cannot be replayed. The URL is deliberately **not** signed: the signed hash and size pin the file, so a different host serving the same bytes is harmless and mirrors stay possible. A downgrade is already impossible (the offered version must be strictly newer).
+
+**Client behaviour** (`OmahaClient::DownloadUpdate`): verify the signature **before** downloading anything; then require the downloaded file's size and SHA-256 to equal the signed values; delete a file that fails. A release build refuses an update that is unsigned, signed with an unknown key, or whose signature does not verify; a debug build (`omaha_require_signature=false`) accepts unsigned updates for local testing. There is no run-time switch.
+
+**Keys.**
+1. Generate once, on a trusted machine: `dotnet run scripts/release-signing/ReleaseSigner.cs -- keygen <key.pem>` (passphrase-encrypted PKCS#8; the passphrase is prompted for, or read from `RELEASE_SIGNING_PASSPHRASE`). It prints the **public key** and key id.
+2. Keep `<key.pem>` and its passphrase **off the server, out of every repository and backed up offline**. Generate a *second* (backup) key the same way, store it offline, and build **both public keys** into the client now: losing the only key means shipping a new client, which only reaches users through an update that the old client must still accept.
+3. Put the public key(s) in `custom_omaha_signing_public_keys` (`custom-browser/src/custom/custom_browser_config.gni`, comma-separated) so `npm run build_omaha_client` embeds them, and — optionally — in this API's `Releases:SigningPublicKeys` to reject bad signatures at publish time.
+4. To rotate: add the new public key alongside the old one, ship that client, then start signing with the new key; drop the old key from a later client.
+
+**Signing a release.** `scripts/Add-BrowserRelease.ps1 -Version <v> -InstallerPath <exe> -SigningKeyPath <key.pem>` computes hash/size, signs and inserts; the `/release-sql` skill's generated SQL carries the same `Signature`. Manually: `dotnet run ReleaseSigner.cs -- sign <key.pem> --app-id {GUID} --platform win --arch x64 --version 1.11.15.0 --installer <exe>` prints `{"sha256","size","signature"}`; `verify` checks one. **Rebuilding the installer changes its hash and size, so sign again.**
+
+**Rolling out signing (order matters).**
+1. Run `Migrations/add_release_signature.sql` (adds the nullable `Signature` column) **before** deploying this API version: the release queries select the column by name.
+2. Generate the keys, put the public key(s) in `custom_browser_config.gni`, build and ship a client that verifies (`custom-omaha-client` 1.3.0.0+).
+3. Sign every release that must still be served to those clients. Existing unsigned rows keep working for older clients but are refused by 1.3.0.0+; sign the current release (`UPDATE BrowserReleases SET Signature = N'<keyId>:<base64>' WHERE Id = <id>`) before relying on it.
+
+**Not covered.** Nothing is Authenticode-signed today, so the installer carries no Windows code signature and SmartScreen reputation is unrelated; this scheme does not replace that. The downloaded file sits in a user-writable temp directory between verification and launch (a local-attacker swap), which is a separate hardening step.
 
 ---
 
@@ -359,7 +410,8 @@ Data/
   Mock/MockWhatsNewRepository.cs             (DB-unavailable fallback)
 Services/
   ReleaseRolloutSelector.cs   Deterministic weighted waterfall bucketing (rollout/A-B)
-  ReleaseRequestValidator.cs  Input rules for POST /api/releases (https + host allow-list, hash, version, ...)
+  ReleaseRequestValidator.cs  Input rules for POST /api/releases (https + host allow-list, hash, version, signature, ...)
+  ReleaseSignature.cs         Release-manifest signature format + verification (public keys only)
 Filters/
   ApiResponseFilters.cs  SkipResponseWrapperAttribute — opt-out from the global wrapper
 Migrations/

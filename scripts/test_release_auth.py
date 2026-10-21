@@ -10,9 +10,17 @@ It mints HS256 tokens for a Member and an Admin with the Development signing key
 from appsettings.Development.json. Never point it at production and never put a
 production secret in that file: with the key, anyone can mint an Admin token.
 Expected: Member/anonymous get 401/403 on every release, what's-new write and
-diagnostic endpoint; Admin passes authorization; invalid release requests get 400.
+diagnostic endpoint; Admin passes authorization; invalid release requests get 400;
+a release must carry a valid manifest signature.
+
+For the signature checks start the server with the THROWAWAY test public key that
+signs the vector below, so publish-time verification is exercised:
+
+    $env:Releases__SigningPublicKeys__0 = '<TEST_PUB>'
+(Without it the server checks the signature's format only and the "wrong
+signature" cases that need the key are reported as skipped.)
 """
-import base64, hashlib, hmac, io, json, sys, time, urllib.request, urllib.error
+import base64, hashlib, hmac, io, json, os, sys, time, urllib.request, urllib.error
 
 BASE = sys.argv[1].rstrip('/') if len(sys.argv) > 1 else 'http://localhost:5070'
 import os
@@ -45,15 +53,20 @@ def call(method, path, tok=None, body=None):
         req.add_header('Authorization', 'Bearer ' + tok)
     try:
         r = urllib.request.urlopen(req, timeout=15)
-        return r.status, r.read().decode()[:300]
+        return r.status, r.read().decode()[:4000]
     except urllib.error.HTTPError as e:
-        return e.code, e.read().decode()[:300]
+        return e.code, e.read().decode()[:4000]
 
 
-GOOD = {'appId': '{8A69D345-D564-463c-AFF1-A69D9E530F96}', 'version': '9.9.9.0', 'platform': 'win', 'arch': 'x64',
-        'installerName': 'wanderlust-setup-9.9.9.0-win-x64.exe',
-        'installerUrl': 'https://api.wander-lust.tech/releases/wanderlust-setup-9.9.9.0-win-x64.exe',
-        'hashSha256': 'a' * 64, 'sizeBytes': 100000000, 'rolloutWeight': 100}
+# A vector made by scripts/release-signing/ReleaseSigner.cs with a THROWAWAY key (never a real one).
+TEST_PUB = 'zzb7yWLzL8btC4pQeTB/FdJVAkZrn3grCmMRZtBi+wZ/vlsC+Uy/n3HszX5aJB4qnNfpKutbdLU1UVVNXykhzg=='
+TEST_SIG = '4f48c49ebe6c4c23:1AzWj6Qg+QJR2AWxwj7ggDsfs3qSmf/EOEO4ZExhcJFRC4blwDS4y/J1WtFFiPJglFIuuGgTpxJFOtihpBUskQ=='
+OTHER_KEY_SIG = '00ee5b29c95110e9:9ySH1Z1oDFDGYc44vw7+StwAIGAek+nRGnTfYl6l7k5NmnUGIzbZ9jGXYqkE30HJvJUFijqV5myHUJUR75IGRw=='
+GOOD = {'appId': '{8A69D345-D564-463c-AFF1-A69D9E530F96}', 'version': '1.11.15.0', 'platform': 'win', 'arch': 'x64',
+        'installerName': 'wanderlust-setup-1.11.15.0-win-x64.exe',
+        'installerUrl': 'https://api.wander-lust.tech/releases/wanderlust-setup-1.11.15.0-win-x64.exe',
+        'hashSha256': '3a675dd110c7abe40cadb69e9bbbc7c0e3ecbf0b8ebdca29e818ca0fe43c3dd3', 'sizeBytes': 200000,
+        'rolloutWeight': 100, 'signature': TEST_SIG}
 
 member, admin = token('Member', 2), token('Admin', 1)
 fails = 0
@@ -83,7 +96,7 @@ check('anonymous  GET  /api/whatsnew (public read)', call('GET', '/api/whatsnew?
 check('anonymous  POST /v4/update (the updater)', call('POST', '/v4/update', None, {'protocol': '4.0', 'apps': [{'appId': GOOD['appId'], 'version': '1.0.0.0', 'updateCheck': {}}], 'os': {'platform': 'win', 'version': '10', 'arch': 'x64'}})[0], 200)
 # --- Admin is allowed through authorization; validation applies
 check('Admin      GET  /api/releases', call('GET', '/api/releases', admin)[0], 200)
-check('Admin      POST valid release (mock repo accepts)', call('POST', '/api/releases', admin, GOOD)[0], [200, 201])
+check('Admin      POST valid signed release (mock repo accepts)', call('POST', '/api/releases', admin, GOOD)[0], [200, 201])
 bad = {
     'attacker URL host': dict(GOOD, installerUrl='https://evil.example/x.exe'),
     'http (not https) URL': dict(GOOD, installerUrl='http://api.wander-lust.tech/releases/x.exe'),
@@ -100,7 +113,27 @@ bad = {
     'weight -1': dict(GOOD, rolloutWeight=-1),
     'size 0': dict(GOOD, sizeBytes=0),
     'appId not a GUID': dict(GOOD, appId='hello'),
+    'signature missing': {k: v for k, v in GOOD.items() if k != 'signature'},
+    'signature empty': dict(GOOD, signature=''),
+    'signature not key:base64': dict(GOOD, signature='nonsense'),
+    'signature too short': dict(GOOD, signature=TEST_SIG[:-10]),
+    'signature wrong base64 alphabet': dict(GOOD, signature=TEST_SIG[:20] + '!' + TEST_SIG[21:]),
 }
+# These need the server to know the public key (see the header comment).
+keyed = {
+    'signature from a different key': dict(GOOD, signature=OTHER_KEY_SIG),
+    'valid signature, but size changed': dict(GOOD, sizeBytes=200001),
+    'valid signature, but version changed': dict(GOOD, version='99.0.0.0'),
+    'valid signature, but hash changed': dict(GOOD, hashSha256='b' * 64),
+    'valid signature, but platform changed': dict(GOOD, platform='linux'),
+    'valid signature, but another app id': dict(GOOD, appId='{11111111-2222-3333-4444-555555555555}'),
+    'signature bytes corrupted': dict(GOOD, signature=TEST_SIG[:17] + ('B' if TEST_SIG[17] != 'B' else 'C') + TEST_SIG[18:]),
+}
+keyed_server = os.environ.get('KEYED_SERVER') == '1'
+if keyed_server:
+    bad.update(keyed)
+else:
+    print('SKIP  publish-time verification cases (set KEYED_SERVER=1 and start the server with the test public key)')
 for label, body in bad.items():
     check('Admin      POST rejected: ' + label, call('POST', '/api/releases', admin, body)[0], 400)
 

@@ -449,3 +449,8 @@ $RECYCLE.BIN/
 *.db
 *.sqlite
 *.sqlite3
+
+# Release-signing private keys must never be committed (scripts/release-signing/ReleaseSigner.cs)
+*.pem
+*.p12
+*.pfx

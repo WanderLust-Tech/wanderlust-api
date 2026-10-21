@@ -34,10 +34,19 @@ namespace WanderlustApi.Services
         private static readonly Regex FileNamePattern = new(
             @"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", RegexOptions.Compiled);
 
+        /// <summary>
+        /// Signing policy for a publish request. <paramref name="Required"/>: a release without a
+        /// signature is rejected (the update client would refuse it anyway).
+        /// <paramref name="PublicKeys"/>: when present, the signature is verified cryptographically
+        /// here too, so a wrong key or a signature over different fields is caught at publish time.
+        /// </summary>
+        public sealed record SigningPolicy(bool Required, IReadOnlyCollection<string> PublicKeys);
+
         /// <summary>Returns one message per problem; empty means the request is acceptable.</summary>
         public static IReadOnlyList<string> Validate(
             CreateReleaseRequest req,
-            IReadOnlyCollection<string> allowedInstallerHosts)
+            IReadOnlyCollection<string> allowedInstallerHosts,
+            SigningPolicy signing)
         {
             var errors = new List<string>();
 
@@ -76,7 +85,33 @@ namespace WanderlustApi.Services
             if (req.ExperimentName is { Length: > 100 })
                 errors.Add("experimentName must be at most 100 characters.");
 
+            ValidateSignature(req, signing, errors);
+
             return errors;
+        }
+
+        private static void ValidateSignature(CreateReleaseRequest req, SigningPolicy signing, List<string> errors)
+        {
+            if (string.IsNullOrEmpty(req.Signature))
+            {
+                if (signing.Required)
+                    errors.Add("signature is required: sign the release with scripts/release-signing/ReleaseSigner.cs "
+                        + "(the update client refuses an unsigned release).");
+                return;
+            }
+
+            if (!ReleaseSignature.Format.IsMatch(req.Signature))
+            {
+                errors.Add("signature must be \"<16 hex key id>:<base64 of 64 bytes>\".");
+                return;
+            }
+
+            // Verify only when the other fields are themselves sound: the message is built from them.
+            if (signing.PublicKeys.Count == 0 || errors.Count > 0) return;
+            var message = ReleaseSignature.Message(
+                req.AppId, req.Platform, req.Arch, req.Version, req.HashSha256, req.SizeBytes);
+            if (!ReleaseSignature.TryVerify(req.Signature, message, signing.PublicKeys, out var why))
+                errors.Add("signature check failed: " + why + ".");
         }
 
         private static bool IsAllowedInstallerUrl(string? url, IReadOnlyCollection<string> allowedHosts)

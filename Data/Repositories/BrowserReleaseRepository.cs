@@ -17,7 +17,8 @@ namespace WanderlustApi.Data.Repositories
             using var conn = await _connectionFactory.CreateConnectionAsync();
             var rows = await conn.QueryAsync<BrowserRelease>(
                 @"SELECT Id, AppId, Version, Platform, Arch, InstallerName, InstallerUrl,
-                         HashSha256, SizeBytes, IsActive, CreatedAt, RolloutWeight, ExperimentName
+                         HashSha256, SizeBytes, IsActive, CreatedAt, RolloutWeight, ExperimentName,
+                         Signature
                   FROM BrowserReleases
                   WHERE AppId = @AppId AND Platform = @Platform AND Arch = @Arch AND IsActive = 1
                   ORDER BY CreatedAt DESC",
@@ -35,7 +36,8 @@ namespace WanderlustApi.Data.Repositories
             using var conn = await _connectionFactory.CreateConnectionAsync();
             return await conn.QueryAsync<BrowserRelease>(
                 @"SELECT Id, AppId, Version, Platform, Arch, InstallerName, InstallerUrl,
-                         HashSha256, SizeBytes, IsActive, CreatedAt, RolloutWeight, ExperimentName
+                         HashSha256, SizeBytes, IsActive, CreatedAt, RolloutWeight, ExperimentName,
+                         Signature
                   FROM BrowserReleases
                   ORDER BY CreatedAt DESC");
         }
@@ -46,11 +48,11 @@ namespace WanderlustApi.Data.Repositories
             var id = await conn.ExecuteScalarAsync<int>(
                 @"INSERT INTO BrowserReleases
                     (AppId, Version, Platform, Arch, InstallerName, InstallerUrl, HashSha256, SizeBytes,
-                     RolloutWeight, ExperimentName, IsActive, CreatedAt)
+                     RolloutWeight, ExperimentName, Signature, IsActive, CreatedAt)
                   OUTPUT INSERTED.Id
                   VALUES
                     (@AppId, @Version, @Platform, @Arch, @InstallerName, @InstallerUrl, @HashSha256, @SizeBytes,
-                     @RolloutWeight, @ExperimentName, 1, GETUTCDATE())",
+                     @RolloutWeight, @ExperimentName, @Signature, 1, GETUTCDATE())",
                 release);
             release.Id = id;
             release.CreatedAt = DateTime.UtcNow;

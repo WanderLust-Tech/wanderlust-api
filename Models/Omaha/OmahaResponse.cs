@@ -57,5 +57,11 @@ namespace WanderlustApi.Models.Omaha
 
         [JsonPropertyName("size")]
         public long Size { get; set; }
+
+        // "<key id>:<base64>" -- see ReleaseSignature. Omitted for an unsigned
+        // release; a client that requires signatures then refuses it.
+        [JsonPropertyName("signature")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Signature { get; set; }
     }
 }

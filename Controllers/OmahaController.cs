@@ -109,6 +109,7 @@ namespace WanderlustApi.Controllers
                                         HashSha256 = selected.HashSha256,
                                         Url      = selected.InstallerUrl,
                                         Size     = selected.SizeBytes,
+                                        Signature = selected.Signature,
                                     }
                                 }
                             }

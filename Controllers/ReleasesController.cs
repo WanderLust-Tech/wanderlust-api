@@ -19,6 +19,7 @@ namespace WanderlustApi.Controllers
         private readonly IBrowserReleaseRepository _releases;
         private readonly ILogger<ReleasesController> _logger;
         private readonly IReadOnlyCollection<string> _allowedInstallerHosts;
+        private readonly ReleaseRequestValidator.SigningPolicy _signing;
 
         public ReleasesController(
             IBrowserReleaseRepository releases,
@@ -31,6 +32,16 @@ namespace WanderlustApi.Controllers
                 configuration.GetSection("Releases:AllowedInstallerHosts").Get<string[]>() is { Length: > 0 } hosts
                     ? hosts
                     : ReleaseRequestValidator.DefaultAllowedInstallerHosts;
+
+            // Releases:SigningPublicKeys -- the same PUBLIC key(s) built into the client. Optional
+            // here (the client is the enforcer); when set, a bad signature is rejected at publish.
+            // Releases:RequireSignature defaults to true: an unsigned release is useless.
+            var keys = configuration.GetSection("Releases:SigningPublicKeys").Get<string[]>() ?? Array.Empty<string>();
+            _signing = new ReleaseRequestValidator.SigningPolicy(
+                configuration.GetValue("Releases:RequireSignature", true), keys);
+            if (keys.Length == 0)
+                _logger.LogWarning("Releases:SigningPublicKeys is not configured: release signatures are checked "
+                    + "for format only; the update client is what enforces them.");
         }
 
         // Who did it, for the audit trail in the log. The database has no
@@ -47,7 +58,7 @@ namespace WanderlustApi.Controllers
         [HttpPost]
         public async Task<ActionResult<BrowserRelease>> Create([FromBody] CreateReleaseRequest req)
         {
-            var problems = ReleaseRequestValidator.Validate(req, _allowedInstallerHosts);
+            var problems = ReleaseRequestValidator.Validate(req, _allowedInstallerHosts, _signing);
             if (problems.Count > 0)
             {
                 _logger.LogWarning("Release publish by {Actor} rejected: {Problems}", Actor, string.Join(" ", problems));
@@ -66,6 +77,7 @@ namespace WanderlustApi.Controllers
                 SizeBytes     = req.SizeBytes,
                 RolloutWeight = req.RolloutWeight,
                 ExperimentName = req.ExperimentName,
+                Signature     = req.Signature,
             };
 
             var created = await _releases.CreateReleaseAsync(release);
@@ -109,6 +121,8 @@ namespace WanderlustApi.Controllers
         // Set lower to stage a rollout or run an A/B experiment alongside
         // other active releases for the same AppId/Platform/Arch.
         int    RolloutWeight = 100,
-        string? ExperimentName = null
+        string? ExperimentName = null,
+        // "<16 hex key id>:<base64>" from ReleaseSigner.cs; see ReleaseSignature.
+        string? Signature = null
     );
 }

@@ -21,5 +21,10 @@ namespace WanderlustApi.Data.Entities
         // Free-text label for admin/reporting use only -- not read by the
         // rollout selection logic itself.
         public string? ExperimentName { get; set; }
+        // "<16 hex key id>:<base64 ECDSA P-256 signature>" over the manifest fields
+        // (app, platform, arch, version, hash, size), made offline with the release
+        // key. Served to the client, which refuses a release it cannot verify. NULL =
+        // unsigned (rows from before signing existed).
+        public string? Signature { get; set; }
     }
 }
