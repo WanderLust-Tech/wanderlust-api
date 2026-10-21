@@ -324,6 +324,9 @@ namespace WanderlustApi.Controllers
             public string? DisplayName { get; set; }
         }
 
+        // Diagnostic. Admin only: anonymously it handed out a validly signed
+        // token for user id 1.
+        [Authorize(Roles = "Admin")]
         [HttpGet("test-jwt")]
         public ActionResult<ApiResponse<object>> TestJWT()
         {
@@ -363,6 +366,8 @@ namespace WanderlustApi.Controllers
             }
         }
 
+        // Diagnostic. Admin only: it reports configuration details.
+        [Authorize(Roles = "Admin")]
         [HttpGet("config-status")]
         public ActionResult<ApiResponse<object>> GetConfigurationStatus()
         {

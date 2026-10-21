@@ -1,21 +1,42 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using WanderlustApi.Data.Entities;
 using WanderlustApi.Data.Repositories;
+using WanderlustApi.Services;
 
 namespace WanderlustApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
+    // Admin only. What this controller writes is what every install's updater is
+    // told to download and run, so "any logged-in user" is not enough: sign-up
+    // is open and new accounts are Members. (Same convention as
+    // FeedbackController's admin endpoints.)
+    [Authorize(Roles = "Admin")]
     public class ReleasesController : ControllerBase
     {
         private readonly IBrowserReleaseRepository _releases;
+        private readonly ILogger<ReleasesController> _logger;
+        private readonly IReadOnlyCollection<string> _allowedInstallerHosts;
 
-        public ReleasesController(IBrowserReleaseRepository releases)
+        public ReleasesController(
+            IBrowserReleaseRepository releases,
+            IConfiguration configuration,
+            ILogger<ReleasesController> logger)
         {
             _releases = releases;
+            _logger = logger;
+            _allowedInstallerHosts =
+                configuration.GetSection("Releases:AllowedInstallerHosts").Get<string[]>() is { Length: > 0 } hosts
+                    ? hosts
+                    : ReleaseRequestValidator.DefaultAllowedInstallerHosts;
         }
+
+        // Who did it, for the audit trail in the log. The database has no
+        // "published by" column yet.
+        private string Actor =>
+            $"{User.FindFirstValue(ClaimTypes.Name) ?? "?"} (id {User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "?"})";
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<BrowserRelease>>> GetAll()
@@ -26,6 +47,13 @@ namespace WanderlustApi.Controllers
         [HttpPost]
         public async Task<ActionResult<BrowserRelease>> Create([FromBody] CreateReleaseRequest req)
         {
+            var problems = ReleaseRequestValidator.Validate(req, _allowedInstallerHosts);
+            if (problems.Count > 0)
+            {
+                _logger.LogWarning("Release publish by {Actor} rejected: {Problems}", Actor, string.Join(" ", problems));
+                return BadRequest(new { errors = problems });
+            }
+
             var release = new BrowserRelease
             {
                 AppId         = req.AppId,
@@ -41,6 +69,10 @@ namespace WanderlustApi.Controllers
             };
 
             var created = await _releases.CreateReleaseAsync(release);
+            _logger.LogWarning(
+                "Release published by {Actor}: id {Id}, app {AppId}, version {Version}, {Platform}/{Arch}, weight {Weight}, url {Url}",
+                Actor, created.Id, created.AppId, created.Version, created.Platform, created.Arch,
+                created.RolloutWeight, created.InstallerUrl);
             return CreatedAtAction(nameof(GetAll), created);
         }
 
@@ -50,6 +82,7 @@ namespace WanderlustApi.Controllers
         {
             var ok = await _releases.DeactivateReleaseAsync(id);
             if (!ok) return NotFound();
+            _logger.LogWarning("Release {Id} deactivated by {Actor}", id, Actor);
             return NoContent();
         }
 
@@ -58,6 +91,7 @@ namespace WanderlustApi.Controllers
         {
             var ok = await _releases.ActivateReleaseAsync(id);
             if (!ok) return NotFound();
+            _logger.LogWarning("Release {Id} activated by {Actor}", id, Actor);
             return NoContent();
         }
     }

@@ -139,22 +139,41 @@ active at the default weight) to cover the rest:
 
 ## Releases Admin API
 
-Manage available releases via the authenticated REST API (`JWT Bearer` required).
+Manage available releases via the authenticated REST API.
+
+> **Admin only (since 2026-10-21).** Every `/api/releases` endpoint, and the
+> write endpoints of `/api/whatsnew`, require a JWT whose role is **`Admin`**
+> (`[Authorize(Roles = "Admin")]`, the same convention as the feedback triage
+> endpoints). Before this, any logged-in user could publish: sign-up is open and
+> new accounts are `Member`, so anyone could register and publish an installer URL
+> that every install's updater would then download and run. A `Member` token now gets
+> `403`, no token gets `401`.
+>
+> **Granting Admin** is a database operation (there is deliberately no API for it):
+> `UPDATE Users SET Role = 'Admin' WHERE Username = N'<name>';`
+> A token carries the role it was issued with, so log in again afterwards.
+>
+> The diagnostic endpoints `GET /api/auth/test-jwt` and `GET /api/auth/config-status`
+> are Admin-only for the same reason (`test-jwt` used to hand out a validly signed
+> token to anyone).
+>
+> `scripts/Add-BrowserRelease.ps1` and the generated `scripts/releases/*.sql` write
+> to the database directly and are unaffected; they are the trusted path.
 
 ### List releases
 
 ```
 GET /api/releases
-Authorization: Bearer <token>
+Authorization: Bearer <admin token>
 ```
 
-Returns all active `BrowserRelease` records in descending creation order.
+Returns **all** `BrowserRelease` records, including deactivated ones, in descending creation order.
 
 ### Publish a new release
 
 ```
 POST /api/releases
-Authorization: Bearer <token>
+Authorization: Bearer <admin token>
 Content-Type: application/json
 
 {
@@ -181,11 +200,27 @@ read by the selection logic.
 
 `InstallerUrl` is stored as a plain string — the client downloads directly from whatever URL it points to; this API never proxies or reads the file's bytes through the update-check request itself. It can point to an external CDN/blob store, **or** this API's own self-hosted `/releases/` static route (see "Installer Hosting" below) — both work, see that section for the tradeoffs.
 
+**Validation.** The request is rejected with `400 {"errors": [...]}` (one message per problem) unless:
+
+| Field | Rule |
+|---|---|
+| `appId` | a GUID in braces, e.g. `{8A69D345-D564-463c-AFF1-A69D9E530F96}` |
+| `version` | exactly four numeric parts (`1.11.15.0`) |
+| `platform` / `arch` | `win`\|`linux`\|`mac` / `x64`\|`x86`\|`arm64` |
+| `installerName` | a plain file name (letters, digits, `.`, `_`, `-`; no path) |
+| `installerUrl` | `https://`, no credentials, and the host is on the allow-list — config key `Releases:AllowedInstallerHosts` (a string array); **default `api.wander-lust.tech`** (this API's own `/releases/` route). Add a CDN host there *before* publishing a release that points at it. |
+| `hashSha256` | 64 hexadecimal characters |
+| `sizeBytes` | 1 … 2 GiB |
+| `rolloutWeight` | 0 … 100 |
+| `experimentName` | at most 100 characters |
+
+Every publish, activate and deactivate is written to the application log at *Warning* level with the acting user (name and id), e.g. `Release published by admin (id 1): id 44, app {…}, version 1.11.15.0, win/x64, weight 100, url …`. There is no "published by" database column yet.
+
 ### Deactivate a release
 
 ```
 POST /api/releases/{id}/deactivate
-Authorization: Bearer <token>
+Authorization: Bearer <admin token>
 ```
 
 Soft-deletes a release (sets `IsActive = 0`). The update endpoint never returns deactivated releases. Use this to roll back a bad build without deleting the record.
@@ -311,8 +346,8 @@ No code changes required — the `(appId, platform, arch)` lookup is fully data-
 ```
 Controllers/
   OmahaController.cs     POST /v4/update — anonymous, raw JSON, SkipResponseWrapper
-  ReleasesController.cs  GET|POST /api/releases — JWT-protected admin CRUD
-  WhatsNewController.cs  GET /api/whatsnew (anonymous) | POST (JWT) — changelog entries
+  ReleasesController.cs  GET|POST /api/releases — Admin-only CRUD, validated, audit-logged
+  WhatsNewController.cs  GET /api/whatsnew (anonymous) | POST (Admin) — changelog entries
 Data/
   Entities/BrowserRelease.cs
   Entities/WhatsNewEntry.cs
@@ -324,6 +359,7 @@ Data/
   Mock/MockWhatsNewRepository.cs             (DB-unavailable fallback)
 Services/
   ReleaseRolloutSelector.cs   Deterministic weighted waterfall bucketing (rollout/A-B)
+  ReleaseRequestValidator.cs  Input rules for POST /api/releases (https + host allow-list, hash, version, ...)
 Filters/
   ApiResponseFilters.cs  SkipResponseWrapperAttribute — opt-out from the global wrapper
 Migrations/

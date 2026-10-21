@@ -27,7 +27,9 @@ namespace WanderlustApi.Controllers
             return Ok(await _entries.GetActiveEntriesAsync(appId));
         }
 
-        [Authorize]
+        // Admin only: this text is shown inside every browser's chrome://whats-new
+        // page, so it is published content, not a member feature.
+        [Authorize(Roles = "Admin")]
         [HttpPost]
         public async Task<ActionResult<WhatsNewEntry>> Create([FromBody] CreateWhatsNewEntryRequest req)
         {
@@ -44,7 +46,7 @@ namespace WanderlustApi.Controllers
         }
 
         // IONOS does not support PUT/DELETE verbs; use POST-based deactivation instead
-        [Authorize]
+        [Authorize(Roles = "Admin")]
         [HttpPost("{id}/deactivate")]
         public async Task<IActionResult> Deactivate(int id)
         {
