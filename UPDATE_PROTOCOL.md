@@ -20,6 +20,7 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
   "request": {
     "protocol": "4.0",
     "sessionId": "{UUID}",
+    "requestId": "{UUID}",
     "isMachine": false,
     "clientVersion": "1.0.0.0",
     "installId": "{UUID}",
@@ -34,6 +35,8 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
         "version": "1.0.0.0",
         "lang": "en",
         "installSource": "update",
+        "isMachine": false,
+        "installDate": -2,
         "updateCheck": {}
       }
     ]
@@ -48,6 +51,10 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
 | `apps[].appId` | Must match a registered app ID in `BrowserReleases` |
 | `apps[].version` | Four-part version string, e.g. `1.0.0.0`. `"0.0.0.0"` (or empty) is a special sentinel meaning "brand-new install, no prior version" — see "Version logic" below. |
 | `clientVersion` | Optional. The `omaha_client` updater tool's own release version (not the browser's) — logged for observability, not used in update-decision logic. Older clients may omit it. |
+| `requestId` | Optional. A random id unique to this one POST (`sessionId` spans a whole check → download → ping session). Lets the server de-duplicate client/proxy retries. Logged only. |
+| `apps[].installSource` | Optional, default `update`. `install` (the installer's first check), `update` (a background check) or `ondemand` (a user-initiated check). Logged only. |
+| `apps[].isMachine` | Optional. `true` when the updater runs system-wide (the service), `false` for a per-user install. Logged only. |
+| `apps[].installDate` | Optional, default `-2`. `-1` = this request is the install itself; `-2` = unknown; otherwise the `response.daystart.elapsedDays` value from the install, fuzzed to week granularity (`X - X % 7`) by the client. Logged only. |
 | `installId` | Optional. A stable per-install GUID, generated once and persisted by the client (**not** `sessionId`, which regenerates every check). Used to deterministically bucket this install for staged rollouts/A-B experiments — see "Version logic" below. Clients that omit it only ever receive releases with `RolloutWeight=100`. |
 
 ### Response — update available
@@ -55,8 +62,10 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
 ```json
 {
   "response": {
+    "daystart": { "elapsedDays": 7248 },
     "apps": [
       {
+        "appId": "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}",
         "updateCheck": {
           "status": "ok",
           "manifest": {
@@ -66,6 +75,10 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
                 "name": "wanderlust-setup-1.0.1.0-win-x64.exe",
                 "hash_sha256": "a1b2c3d4...",
                 "url": "https://cdn.wanderlustbrowser.com/releases/1.0.1.0/wanderlust-setup-1.0.1.0-win-x64.exe",
+                "urls": [
+                  "https://cdn.wanderlustbrowser.com/releases/1.0.1.0/wanderlust-setup-1.0.1.0-win-x64.exe",
+                  "https://mirror.example.com/releases/1.0.1.0/wanderlust-setup-1.0.1.0-win-x64.exe"
+                ],
                 "size": 98304000
               }
             ]
@@ -82,7 +95,8 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
 ```json
 {
   "response": {
-    "apps": [{ "updateCheck": { "status": "noupdate" } }]
+    "daystart": { "elapsedDays": 7248 },
+    "apps": [{ "appId": "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}", "updateCheck": { "status": "noupdate" } }]
   }
 }
 ```
@@ -92,10 +106,95 @@ No authentication required. The endpoint bypasses the global `ApiResponseWrapper
 ```json
 {
   "response": {
-    "apps": [{ "updateCheck": { "status": "error", "errorMessage": "..." } }]
+    "daystart": { "elapsedDays": 7248 },
+    "apps": [{ "appId": "{A1B2C3D4-...}", "updateCheck": { "status": "error", "errorMessage": "..." } }]
   }
 }
 ```
+
+### Response fields (added alongside the Omaha 4 spec review)
+
+All of these are additive: a client that ignores them behaves exactly as before.
+
+| Field | Meaning |
+|---|---|
+| `response.daystart.elapsedDays` | Whole days since 2007-01-01 UTC when the request arrived (the Omaha epoch). A client stores it (week-fuzzed) and sends it back as `apps[].installDate`. Also present on error responses. |
+| `response.apps[].appId` | Echo of the request app's `appId` on **every** response app (`ok`, `noupdate`, `error`; an empty string if the request had none), so the client can check the answer is for the app it asked about. |
+| `response.apps[].status` | Optional app-level state: `ok` (the default, omitted) \| `restricted` \| `error-unknownApplication`. **Not emitted yet** — documented so clients can already act on it. |
+| `updateCheck.status` | `ok` \| `noupdate` \| `error` today. The client also understands `error-osnotsupported`, `error-hwnotsupported` and `error-unsupportedprotocol`; the server does **not** emit those yet. |
+| `packages[].urls` | Ordered download URLs: element 0 is always identical to `url`; the rest are mirrors the client falls back to, in order, if a download fails. See "Mirrors". `url` is unchanged, so older clients keep working. |
+| `X-Retry-After` header | Optional load-shedding switch. When config `Omaha:RetryAfterSeconds` is greater than 0, every `/v4/update` response carries `X-Retry-After: <seconds>` (clamped to 86400) and clients do not contact the server for background updates until it has elapsed. Absent or `0` = never sent. |
+
+### Mirrors
+
+A release may list up to 5 extra download URLs (`mirrorUrls` on publish, stored as a JSON array in `BrowserReleases.MirrorUrls`). The Omaha response returns `urls = [installerUrl, ...mirrors]`. A mirror can serve nothing but the signed bytes: the release signature pins the installer's SHA-256 and size (the URL itself is deliberately not signed), and the client checks both after every download.
+
+Run `Migrations/add_release_mirror_urls.sql` **before** deploying a build that includes this change — the repository SELECTs the new column and there is no fallback for it being absent. An unparseable `MirrorUrls` value is logged and ignored (the primary URL alone is served), so a bad row can never break updates.
+
+---
+
+## Ping-backs
+
+```
+POST /v4/ping
+Content-Type: application/json
+```
+
+Anonymous, raw JSON (`SkipResponseWrapper`), fire-and-forget: the client sends it after an install/update attempt and ignores the reply. Today the server only **logs** each event (one structured *Information* line per event, `Omaha ping: ...`); nothing is persisted.
+
+```json
+{
+  "request": {
+    "protocol": "4.0",
+    "sessionId": "{UUID}",
+    "requestId": "{UUID}",
+    "clientVersion": "1.4.0.0",
+    "os": { "platform": "win", "version": "10.0.26200", "arch": "x64" },
+    "apps": [
+      {
+        "appId": "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}",
+        "version": "1.0.0.0",
+        "events": [
+          {
+            "eventType": 14, "eventResult": 1, "errorCat": 0, "errorCode": 0, "extraCode1": 0,
+            "downloadTimeMs": 8123, "downloaded": 98304000, "total": 98304000,
+            "url": "https://cdn.wanderlustbrowser.com/releases/1.0.1.0/wanderlust-setup-1.0.1.0-win-x64.exe"
+          },
+          {
+            "eventType": 3, "eventResult": 1, "errorCat": 0, "errorCode": 0, "extraCode1": 0,
+            "previousVersion": "1.0.0.0", "nextVersion": "1.0.1.0"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Response (`200`):
+
+```json
+{ "response": { "daystart": { "elapsedDays": 7248 },
+                "apps": [ { "appId": "{A1B2C3D4-...}", "events": [ { "status": "ok" } ] } ] } }
+```
+
+A request with no `request` object gets `400` with `{"response":{"error":"..."}}`. Unknown fields are ignored.
+
+**Event fields**
+
+| Field | Values |
+|---|---|
+| `eventType` | `2` install session · `3` update session · `14` a download |
+| `eventResult` | `0` error · `1` success · `4` cancelled |
+| `errorCat` | `0` none · `1` download · `3` client install · `4` the updater itself · `5` update check · `7` the application's installer · `8` patch application |
+| `errorCode` / `extraCode1` | Numeric detail; meaning depends on `errorCat`. `0` = no error. |
+| `nextVersion` | Version the session was attempting (types 2 and 3). |
+| `previousVersion` | Version before the attempt (type 3). |
+| `downloadTimeMs`, `downloaded`, `total`, `url` | Download events (type 14): elapsed time, bytes received, expected size, and the URL tried. |
+
+**Limits and hygiene.** At most 5 apps per request and 20 events per app (the rest are dropped). Strings are cut to 256 characters and have control characters stripped before logging, so a hostile ping cannot forge log lines.
+
+**Privacy.** Pings deliberately carry **no stable install identifier**: only the per-session `sessionId` and per-request `requestId`, both random and regenerated every time. The server never logs or accepts `installId` on this endpoint, so pings cannot be joined into a per-install history. (The update *check* still sends `installId`, for rollout bucketing — see "Version logic".)
 
 ### Version logic
 
@@ -187,7 +286,8 @@ Content-Type: application/json
   "sizeBytes":     98304000,
   "signature":     "4f48c49ebe6c4c23:1AzWj6Qg+QJR2AWxwj7ggDsfs3qSmf/EOEO4ZExhcJFRC4blwDS4y/J1WtFFiPJglFIuuGgTpxJFOtihpBUskQ==",
   "rolloutWeight": 100,
-  "experimentName": null
+  "experimentName": null,
+  "mirrorUrls":    ["https://mirror.example.com/releases/1.0.1.0/wanderlust-setup-1.0.1.0-win-x64.exe"]
 }
 ```
 
@@ -214,6 +314,7 @@ read by the selection logic.
 | `sizeBytes` | 1 … 2 GiB |
 | `rolloutWeight` | 0 … 100 |
 | `experimentName` | at most 100 characters |
+| `mirrorUrls` | optional; at most 5 entries, each `https://`, no credentials, at most 1024 characters, none repeating `installerUrl` or each other. Mirrors are **not** held to the host allow-list — the signed hash/size make the host irrelevant to integrity. Needs `Migrations/add_release_mirror_urls.sql`. |
 | `signature` | **required** (`Releases:RequireSignature`, default true): `<16 hex key id>:<base64 of 64 bytes>` made by `scripts/release-signing/ReleaseSigner.cs`. If `Releases:SigningPublicKeys` (the same public key(s) built into the client) is configured it is also **verified** here, so a wrong key or a signature over different fields is rejected at publish time |
 
 Every publish, activate and deactivate is written to the application log at *Warning* level with the acting user (name and id), e.g. `Release published by admin (id 1): id 44, app {…}, version 1.11.15.0, win/x64, weight 100, url …`. There is no "published by" database column yet.
@@ -358,7 +459,7 @@ Same soft-delete/IONOS-no-PUT-DELETE convention as `/api/releases`.
 
 ## Database
 
-Run `Migrations/add_browser_releases.sql` once against the SQL Server instance before deploying, then `Migrations/add_release_rollout.sql` for the rollout/A-B columns. Both are idempotent (`IF NOT EXISTS`).
+Run `Migrations/add_browser_releases.sql` once against the SQL Server instance before deploying, then `Migrations/add_release_rollout.sql` for the rollout/A-B columns, then `Migrations/add_release_mirror_urls.sql` for the mirror column. All are idempotent (`IF NOT EXISTS`).
 
 ```sql
 -- key columns
@@ -373,6 +474,7 @@ IsActive       BIT DEFAULT 1     -- soft-delete flag
 CreatedAt      DATETIME2         -- selection order (newest first)
 RolloutWeight  INT DEFAULT 100   -- 0-100; see "Version logic"
 ExperimentName NVARCHAR(128)     -- nullable, admin/reporting label only
+MirrorUrls     NVARCHAR(MAX)     -- nullable JSON array of https mirror URLs
 ```
 
 A non-clustered index on `(AppId, Platform, Arch, IsActive, CreatedAt DESC)` covers the primary update lookup query.
@@ -396,7 +498,7 @@ No code changes required — the `(appId, platform, arch)` lookup is fully data-
 
 ```
 Controllers/
-  OmahaController.cs     POST /v4/update — anonymous, raw JSON, SkipResponseWrapper
+  OmahaController.cs     POST /v4/update and POST /v4/ping — anonymous, raw JSON, SkipResponseWrapper
   ReleasesController.cs  GET|POST /api/releases — Admin-only CRUD, validated, audit-logged
   WhatsNewController.cs  GET /api/whatsnew (anonymous) | POST (Admin) — changelog entries
 Data/
@@ -417,10 +519,12 @@ Filters/
 Migrations/
   add_browser_releases.sql
   add_release_rollout.sql
+  add_release_mirror_urls.sql
   add_whats_new_entries.sql
 Models/
   Omaha/OmahaRequest.cs
   Omaha/OmahaResponse.cs
+  Omaha/OmahaPing.cs
 ```
 
 ---

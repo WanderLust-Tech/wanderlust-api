@@ -16,6 +16,12 @@ namespace WanderlustApi.Models.Omaha
         [JsonPropertyName("sessionId")]
         public string SessionId { get; set; } = "";
 
+        // Random per-request id (unique to this POST, unlike sessionId which
+        // spans a whole check/download/ping session). Lets the server
+        // de-duplicate client/proxy retries. Optional.
+        [JsonPropertyName("requestId")]
+        public string? RequestId { get; set; }
+
         [JsonPropertyName("isMachine")]
         public bool IsMachine { get; set; }
 
@@ -63,8 +69,23 @@ namespace WanderlustApi.Models.Omaha
         [JsonPropertyName("lang")]
         public string Lang { get; set; } = "en";
 
+        // "install" (first run of the installer), "update" (background check;
+        // the default and what older clients send) or "ondemand" (a
+        // user-initiated check).
         [JsonPropertyName("installSource")]
         public string InstallSource { get; set; } = "update";
+
+        // True when the updater runs system-wide (service), false for a
+        // per-user install. Optional.
+        [JsonPropertyName("isMachine")]
+        public bool? IsMachine { get; set; }
+
+        // Approximate install date as a server elapsedDays value (see
+        // response.daystart), fuzzed to week granularity by the client.
+        // -1 = this request is the install itself, -2 = unknown / not
+        // applicable (also the default when omitted).
+        [JsonPropertyName("installDate")]
+        public long? InstallDate { get; set; }
 
         [JsonPropertyName("updateCheck")]
         public object? UpdateCheck { get; set; }

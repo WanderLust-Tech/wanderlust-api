@@ -78,6 +78,9 @@ namespace WanderlustApi.Controllers
                 RolloutWeight = req.RolloutWeight,
                 ExperimentName = req.ExperimentName,
                 Signature     = req.Signature,
+                MirrorUrls    = req.MirrorUrls is { Length: > 0 }
+                                    ? System.Text.Json.JsonSerializer.Serialize(req.MirrorUrls)
+                                    : null,
             };
 
             var created = await _releases.CreateReleaseAsync(release);
@@ -123,6 +126,9 @@ namespace WanderlustApi.Controllers
         int    RolloutWeight = 100,
         string? ExperimentName = null,
         // "<16 hex key id>:<base64>" from ReleaseSigner.cs; see ReleaseSignature.
-        string? Signature = null
+        string? Signature = null,
+        // Optional extra https download URLs, tried in order after InstallerUrl if it
+        // fails. At most 5; the signed hash/size pin the file, so mirrors are safe.
+        string[]? MirrorUrls = null
     );
 }

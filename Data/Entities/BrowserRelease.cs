@@ -26,5 +26,9 @@ namespace WanderlustApi.Data.Entities
         // key. Served to the client, which refuses a release it cannot verify. NULL =
         // unsigned (rows from before signing existed).
         public string? Signature { get; set; }
+        // JSON array of extra https download URLs (mirrors) the client falls back
+        // to after InstallerUrl. NULL = none. The signed hash and size pin the file,
+        // so a mirror cannot serve different bytes. See add_release_mirror_urls.sql.
+        public string? MirrorUrls { get; set; }
     }
 }

@@ -85,9 +85,51 @@ namespace WanderlustApi.Services
             if (req.ExperimentName is { Length: > 100 })
                 errors.Add("experimentName must be at most 100 characters.");
 
+            ValidateMirrorUrls(req, errors);
+
             ValidateSignature(req, signing, errors);
 
             return errors;
+        }
+
+        public const int MaxMirrorUrls = 5;
+        public const int MaxUrlLength = 1024;
+
+        // Mirrors may live on any host (that is the point of a mirror): the signed hash
+        // and size pin the file, so a mirror cannot serve different bytes. They still
+        // have to be plain https URLs without credentials.
+        private static void ValidateMirrorUrls(CreateReleaseRequest req, List<string> errors)
+        {
+            if (req.MirrorUrls == null || req.MirrorUrls.Length == 0) return;
+
+            if (req.MirrorUrls.Length > MaxMirrorUrls)
+            {
+                errors.Add($"mirrorUrls must contain at most {MaxMirrorUrls} URLs.");
+                return;
+            }
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(req.InstallerUrl)) seen.Add(req.InstallerUrl);
+
+            foreach (var url in req.MirrorUrls)
+            {
+                if (string.IsNullOrWhiteSpace(url)
+                    || url.Length > MaxUrlLength
+                    || !Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                    || uri.Scheme != Uri.UriSchemeHttps
+                    || !string.IsNullOrEmpty(uri.UserInfo))
+                {
+                    errors.Add($"each mirrorUrls entry must be an https:// URL of at most {MaxUrlLength} "
+                        + "characters, without credentials.");
+                    return;
+                }
+
+                if (!seen.Add(url))
+                {
+                    errors.Add("mirrorUrls must not repeat installerUrl or another mirror.");
+                    return;
+                }
+            }
         }
 
         private static void ValidateSignature(CreateReleaseRequest req, SigningPolicy signing, List<string> errors)
